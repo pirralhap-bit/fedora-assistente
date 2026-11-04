@@ -54,8 +54,9 @@ def say(text):
     def run():
         tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        play = subprocess.Popen(["pw-play", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
-                                stdin=tts.stdout, stderr=subprocess.DEVNULL)
+        # --raw: without it pw-play tries to sniff a file format on stdin and fails silently
+        play = subprocess.Popen(["pw-play", "--raw", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
+                                stdin=tts.stdout)
         tts.stdout.close()
         with _lock:
             _procs.extend([tts, play])
