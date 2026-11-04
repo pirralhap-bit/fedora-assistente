@@ -1,0 +1,308 @@
+<title>Jarvis</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#030305">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap">
+<style>
+/* Layout: one dark sky. A black hole in the centre listens; system data drifts on its left orbit, vault data on its right. No boxes.
+   #notas swaps to a quiet writing page with a small hole that still listens. Single deliberate dark theme. */
+:root{
+  --space:#030305; --ink:#ece6dc; --dim:#8a8378; --faint:#4a463f; --hot:#ffb15c; --white-hot:#fff1d6; --cool:#8fb4ff; --warn:#ff8a5c;
+  --ui:"Manrope",system-ui,sans-serif; --data:"JetBrains Mono",ui-monospace,monospace; --write:"Literata",Georgia,serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--space);color:var(--ink);font:400 15px/1.5 var(--ui);overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+:focus-visible{outline:1px solid var(--hot);outline-offset:4px}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- home: the black hole ---------- */
+#home{position:fixed;inset:0}
+#sky,#hole{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hole{cursor:pointer}
+.orbit{position:absolute;left:0;top:0;display:grid;gap:1px;white-space:nowrap;pointer-events:none;will-change:transform}
+.orbit .k{font:300 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.orbit .v{font:300 22px var(--ui);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.orbit .s{font:300 11px var(--data);color:var(--faint)}
+.orbit.left{text-align:right}
+.orbit .v.hot{color:var(--warn)}
+.voice{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  width:min(640px,calc(100% - 32px));display:grid;gap:10px;justify-items:center;text-align:center}
+.state{font:400 11px var(--data);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;gap:10px;align-items:center}
+.state i{width:6px;height:6px;border-radius:50%;background:var(--faint);transition:background-color .3s}
+body[data-v="listen"] .state i,body[data-v="dict"] .state i{background:var(--hot);box-shadow:0 0 10px var(--hot)}
+body[data-v="think"] .state i{background:var(--cool)}
+.heard{font:300 26px/1.3 var(--ui);min-height:1.3em;color:var(--ink);text-wrap:balance}
+.reply{font-size:14px;color:var(--dim);min-height:1.5em;max-width:56ch;text-wrap:pretty}
+.cmds{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;font-size:13px}
+.cmd{background:none;border:0;padding:4px 0;color:var(--dim);border-bottom:1px solid transparent}
+.cmd:hover{color:var(--ink);border-bottom-color:var(--faint)}
+.typed{display:flex;gap:14px;align-items:center;width:min(420px,100%)}
+.typed input{flex:1;min-width:0;background:none;border:0;border-bottom:1px solid var(--faint);padding:6px 2px;font-size:14px;text-align:center}
+.typed input:focus-visible{outline:none;border-bottom-color:var(--hot)}
+.typed input::placeholder{color:var(--faint)}
+.mute{background:none;border:0;font:400 11px var(--data);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:4px 0}
+.mute:hover{color:var(--ink)}
+.mute[aria-pressed="true"]{color:var(--warn)}
+.proto{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font:400 10px var(--data);letter-spacing:.24em;text-transform:uppercase;color:var(--faint)}
+
+/* ---------- #notas: the writing page ---------- */
+#notes{position:fixed;inset:0;display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 1fr auto;
+  padding-block:20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));column-gap:32px}
+.nhead{grid-column:1/-1;display:flex;align-items:baseline;gap:20px;padding-bottom:18px}
+.back{color:var(--dim);text-decoration:none;font-size:13px}
+.back:hover{color:var(--ink)}
+.nhead h1{margin:0;font:500 24px var(--write);letter-spacing:-.01em}
+.npath{font:300 11px var(--data);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.days{overflow-y:auto;display:grid;align-content:start;gap:2px;padding-right:8px}
+.days h2{margin:0 0 8px;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.day{background:none;border:0;text-align:left;padding:5px 0;color:var(--dim);font-size:14px}
+.day:hover{color:var(--ink)}
+.day[aria-current="true"]{color:var(--hot)}
+.page{min-width:0;min-height:0;display:flex;justify-content:center}
+#text{width:min(72ch,100%);height:100%;resize:none;background:none;border:0;padding:0 0 40px;
+  font:400 19px/1.75 var(--write);color:var(--ink);caret-color:var(--hot)}
+#text:focus-visible{outline:none}
+#text::placeholder{color:var(--faint)}
+.nfoot{grid-column:1/-1;display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding-top:14px;border-top:1px solid #15140f}
+#mini{width:52px;height:52px;flex:none;cursor:pointer}
+.nstate{display:grid;min-width:0;flex:1 1 220px}
+.nstate b{font:400 11px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:400}
+.nstate span{font-size:13px;color:var(--faint)}
+.act{background:none;border:0;padding:6px 0;font-size:14px;color:var(--dim);border-bottom:1px solid transparent}
+.act:hover{color:var(--ink);border-bottom-color:var(--faint)}
+.act.primary{color:var(--hot)}
+.act:disabled{opacity:.4;cursor:default;border-color:transparent}
+.act[aria-pressed="true"]{color:var(--warn)}
+
+@media (max-width:760px){
+  body{overflow:auto}
+  #notes{position:static;min-height:100%;grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}
+  .days{display:flex;overflow-x:auto;gap:16px;padding-bottom:10px}.days h2{display:none}.day{white-space:nowrap}
+  #text{min-height:55vh;font-size:17px}
+  .heard{font-size:20px}
+  .orbit .s{display:none}.orbit .v{font-size:17px;max-width:calc(50vw - 28px);overflow:hidden;text-overflow:ellipsis}.orbit.left{text-align:left}
+  .voice{gap:6px}.reply:empty{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<section id="home" aria-label="Jarvis">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <canvas id="hole" role="button" tabindex="0" aria-label="Buraco negro do Jarvis. Toque ou aperte Espaço para simular o comando de voz."></canvas>
+  <div class="proto">protótipo · voz simulada · sem IA</div>
+  <div id="orbits" aria-label="Sistema e vault"></div>
+  <div class="voice">
+    <div class="state" id="state"><i aria-hidden="true"></i><span id="state-t">Aguardando “Jarvis”</span></div>
+    <div class="heard" id="heard" aria-live="polite"></div>
+    <div class="reply" id="reply" aria-live="polite">Toque no buraco negro ou aperte Espaço para chamar. Ou escolha um comando:</div>
+    <div class="cmds" id="cmds"></div>
+    <form class="typed" id="typed">
+      <label class="sr" for="cmd">Comando</label>
+      <input id="cmd" name="comando" autocomplete="off" placeholder="ou digite um comando…">
+      <button type="button" class="mute" id="mute" aria-pressed="false">mic ligado</button>
+    </form>
+  </div>
+</section>
+
+<section id="notes" aria-label="Notas diárias" hidden>
+  <header class="nhead">
+    <a class="back" href="#">← Jarvis</a>
+    <h1 id="n-title">Hoje</h1>
+    <span class="npath" id="n-path"></span>
+  </header>
+  <nav class="days" aria-label="Notas diárias recentes"><h2>Diárias</h2><div id="days" style="display:contents"></div></nav>
+  <div class="page">
+    <label class="sr" for="text">Texto da nota</label>
+    <textarea id="text" name="nota" spellcheck="true" placeholder="Escreva, ou diga “Jarvis, ditar”…"></textarea>
+  </div>
+  <footer class="nfoot">
+    <canvas id="mini" role="button" tabindex="0" aria-label="Simular comando de voz no editor"></canvas>
+    <div class="nstate"><b id="n-state">Aguardando “Jarvis”</b><span id="n-hint">“Jarvis, ditar” · “Jarvis, organizar” · “Jarvis, salvar” · “Jarvis, voltar”</span></div>
+    <button type="button" class="act" id="dictate" aria-pressed="false">Ditar</button>
+    <button type="button" class="act" id="tidy">Ollama: organizar</button>
+    <button type="button" class="act" id="undo" disabled>Desfazer</button>
+    <button type="button" class="act primary" id="save">Salvar</button>
+  </footer>
+</section>
+
+<script>
+const DATA=/*DATA*/null;
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+const tz='America/Sao_Paulo';
+const fmt=(o,d=new Date())=>new Intl.DateTimeFormat('pt-BR',{timeZone:tz,...o}).format(d);
+const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const wait=ms=>new Promise(r=>setTimeout(r,reduce.matches?Math.min(ms,120):ms));
+
+// ================= black hole renderer (shared by the home and the editor) =================
+class Hole{
+  constructor(cv,{count=1600,scale=1,stars=false}={}){this.cv=cv;this.cx=cv.getContext('2d');this.scale=scale;this.level=.1;this.goal=.1;this.spin=1;this.t=0;
+    this.p=Array.from({length:count},()=>{const r=1.35+Math.pow(Math.random(),1.6)*2.1;return{r,a:Math.random()*Math.PI*2,z:(Math.random()-.5)*.08*r,s:.6+Math.random()*1.4,k:Math.random()}});
+    this.resize()}
+  resize(){const d=devicePixelRatio||1,w=this.cv.clientWidth,h=this.cv.clientHeight;this.w=w;this.h=h;this.cv.width=w*d;this.cv.height=h*d;this.cx.setTransform(d,0,0,d,0,0);
+    const narrow=this.scale===1&&w<760;this.R=Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.scale>1?h/2:h*(narrow?.2:.44)}
+  col(r,alpha){const t=Math.max(0,Math.min(1,(r-1.35)/2.1));// hot white inside, amber, then deep red outside
+    const c=t<.25?[255,241,214]:t<.6?[255,177,92]:[214,92,52];return`rgba(${c[0]},${c[1]},${c[2]},${alpha})`}
+  frame(dt){
+    this.level+=(this.goal-this.level)*Math.min(1,dt*6);const L=this.level;this.t+=dt;
+    const{cx,R,X,Y}=this,tilt=.24,speed=(.25+L*1.6)*this.spin;
+    cx.clearRect(0,0,this.w,this.h);
+    // outer glow
+    let g=cx.createRadialGradient(X,Y,R*.9,X,Y,R*(4.2+L));g.addColorStop(0,`rgba(255,160,80,${.10+L*.18})`);g.addColorStop(1,'rgba(255,120,60,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(X,Y,R*(4.2+L),0,Math.PI*2);cx.fill();
+    const TAU=Math.PI*2,band=(clipFront)=>{cx.save();if(clipFront){cx.beginPath();cx.rect(0,Y,this.w,this.h);cx.clip();cx.beginPath();cx.arc(X,Y,R*1.01,0,TAU);cx.clip()}
+      cx.translate(X,Y);cx.scale(1,tilt);const b=cx.createRadialGradient(0,0,R*1.2,0,0,R*3.6);
+      b.addColorStop(0,'rgba(255,236,200,0)');b.addColorStop(.08,`rgba(255,214,150,${.5+L*.35})`);b.addColorStop(.35,`rgba(255,150,70,${.22+L*.2})`);b.addColorStop(1,'rgba(200,70,40,0)');
+      cx.fillStyle=b;cx.beginPath();cx.arc(0,0,R*3.6,0,TAU);cx.arc(0,0,R*1.2,0,TAU,true);cx.fill();cx.restore()};
+    cx.globalCompositeOperation='lighter';band(false);
+    // light from the far side of the disk, bent over the top of the shadow
+    const lg=cx.createRadialGradient(X,Y,R*1.02,X,Y,R*1.55);lg.addColorStop(0,`rgba(255,236,200,${.55+L*.35})`);lg.addColorStop(.3,`rgba(255,180,100,${.25+L*.2})`);lg.addColorStop(1,'rgba(255,140,60,0)');
+    cx.fillStyle=lg;cx.beginPath();cx.ellipse(X,Y,R*1.55,R*1.55,0,Math.PI,TAU);cx.ellipse(X,Y,R*1.02,R*1.02,0,TAU,Math.PI,true);cx.fill();
+    const back=[],front=[];
+    for(const q of this.p){if(!reduce.matches)q.a+=dt*speed*Math.pow(q.r,-1.5)*2.2;
+      const sn=Math.sin(q.a);(sn<0?back:front).push(q)}
+    const dot=(x,y,s,c)=>{cx.fillStyle=c;cx.fillRect(x-s/2,y-s/2,s,s)};
+    const bright=.35+L*.5;
+    for(const q of back){const x=X+Math.cos(q.a)*q.r*R,y=Y+Math.sin(q.a)*q.r*R*tilt+q.z*R;dot(x,y,q.s,this.col(q.r,bright*(.5+.5*q.k)));
+      // lensed image of the far side, bent over the top of the shadow
+      const rr=R*(1.06+(q.r-1.35)*.16);const lx=X+Math.cos(q.a)*rr,ly=Y+Math.sin(q.a)*rr;dot(lx,ly,q.s*.8,this.col(q.r,bright*.55*q.k))}
+    cx.globalCompositeOperation='source-over';
+    // shadow + photon ring
+    const pr=R*(1+L*.04+Math.sin(this.t*2)*.004);
+    cx.fillStyle='#000';cx.beginPath();cx.arc(X,Y,pr,0,TAU);cx.fill();
+    g=cx.createRadialGradient(X,Y,pr*.96,X,Y,pr*1.12);g.addColorStop(0,'rgba(255,241,214,0)');g.addColorStop(.35,`rgba(255,226,180,${.55+L*.4})`);g.addColorStop(1,'rgba(255,170,90,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(X,Y,pr*1.12,0,TAU);cx.arc(X,Y,pr*.96,0,TAU,true);cx.fill();
+    cx.globalCompositeOperation='lighter';band(true);
+    for(const q of front){const x=X+Math.cos(q.a)*q.r*R,y=Y+Math.sin(q.a)*q.r*R*tilt+q.z*R;if(Math.hypot(x-X,y-Y)<pr*.98&&y<Y)continue;
+      dot(x,y,q.s*1.1,this.col(q.r,bright*(.6+.4*q.k)))}
+    cx.globalCompositeOperation='source-over'}
+}
+function stars(cv){const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*d;cv.height=h*d;const x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);
+  for(let i=0;i<Math.round(w*h/2600);i++){const a=Math.random();x.fillStyle=`rgba(${a>.9?'190,205,255':'236,230,220'},${.15+Math.random()*.5})`;x.fillRect(Math.random()*w,Math.random()*h,a>.97?1.6:1,a>.97?1.6:1)}}
+
+const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,scale:3.2});
+stars($('sky'));
+
+// ================= orbiting info (no boxes; positions follow an ellipse round the hole) =================
+const M={cpu:9,ram:8.1,gpu:3,vram:.6};let ollamaBusy=0;
+const num=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
+const rel=new Intl.RelativeTimeFormat('pt-BR',{numeric:'auto'});
+const ago=ts=>{const h=Math.round((ts*1000-Date.now())/36e5);return Math.abs(h)<24?rel.format(h,'hour'):rel.format(Math.round(h/24),'day')};
+function pregao(){const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'short',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+  // shortcut: ignores B3 holidays; the real app should use the b3-* calendar
+  const m=+p.hour*60+ +p.minute;return!['Sat','Sun'].includes(p.weekday)&&m>=600&&m<1020}
+const ITEMS=[
+  // side, angle (deg, 180 = straight left), key, value(), sub()
+  ['left',216,'hora',()=>fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>fmt({weekday:'long',day:'numeric',month:'long'})],
+  ['left',198,'cpu',()=>Math.round(M.cpu)+'%',()=>'Xeon E5-2680 v4 · 28 threads'],
+  ['left',180,'ram',()=>num.format(M.ram)+' / 15 GB',()=>'memória'],
+  ['left',162,'gpu',()=>Math.round(M.gpu)+'%',()=>'RX 580 · '+num.format(M.vram)+' / 8 GB de VRAM'],
+  ['left',144,'ollama',()=>ollamaBusy>Date.now()?'organizando':'parado',()=>ollamaBusy>Date.now()?'llama3.2 na GPU':'nenhum modelo carregado'],
+  ['right',-30,'b3',()=>pregao()?'pregão aberto':'pregão fechado',()=>pregao()?'fecha às 17h':'abre às 10h'],
+  ['right',-12,'cofre',()=>DATA.total+' notas',()=>DATA.links+' ligações'],
+  ['right',6,'hoje',()=>DATA.today+(DATA.today===1?' nota editada':' notas editadas'),()=>DATA.inbox?DATA.inbox+' no inbox':'inbox vazio'],
+  ['right',24,'última',()=>{const t=DATA.recent[0][0];return t.length>26?t.slice(0,25)+'…':t},()=>ago(DATA.recent[0][1])],
+];
+const orbitEls=ITEMS.map(([side,deg,k])=>{const e=el('div','orbit '+side);e.append(el('div','k',k),el('div','v'),el('div','s'));$('orbits').append(e);return e});
+function fillOrbit(){ITEMS.forEach(([, , ,v,s],i)=>{const e=orbitEls[i];e.querySelector('.v').textContent=v();e.querySelector('.s').textContent=s();
+  e.querySelector('.v').classList.toggle('hot',i===1&&M.cpu>80||i===3&&M.gpu>80)})}
+function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
+  const rx=narrow?W*.44:Math.min(W*.37,hole.R*5.6),ry=narrow?H*.36:Math.min(H*.33,hole.R*3.4);
+  if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{const e=orbitEls[i],k=col[side]++;
+      const x=side==='left'?16:W/2+8,y=hole.Y+hole.R*2.2+k*46;e.style.transform=`translate(${x}px,${y}px)`;e.style.opacity=1});return}
+  ITEMS.forEach(([side,deg],i)=>{const e=orbitEls[i];
+    const a=(deg+(reduce.matches?0:Math.sin(t*.06+i*1.7)*2.2))*Math.PI/180;// slow sway along the orbit
+    let x=hole.X+Math.cos(a)*rx,y=hole.Y+Math.sin(a)*ry;
+    const w=e.offsetWidth,h=e.offsetHeight;x=side==='left'?x-w:x;y-=h/2;
+    x=Math.max(16,Math.min(W-16-w,x));
+    const depth=.55+.45*Math.cos(a*2);// items near the horizon are brightest
+    e.style.transform=`translate(${x}px,${y}px)`;e.style.opacity=(narrow?.9:.45+.55*depth).toFixed(2)})}
+
+function meters(){const busy=ollamaBusy>Date.now();const goal={cpu:busy?34:9,ram:busy?9.4:8.1,gpu:busy?88:3,vram:busy?5.2:.6},max={cpu:100,ram:15,gpu:100,vram:8};
+  for(const k in M){M[k]+=(goal[k]-M[k])*.35+(Math.random()-.5)*max[k]*.02;M[k]=Math.max(0,Math.min(max[k],M[k]))}fillOrbit()}
+meters();setInterval(meters,1000);
+
+// ================= voice (simulated): openWakeWord waits for "Jarvis", whisper.cpp transcribes =================
+let vs='idle';
+const STATES={idle:'Aguardando “Jarvis”',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
+function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=STATES[s];
+  const g={idle:.12,listen:.55,think:.3,dict:.6,mute:.03}[s];hole.goal=mini.goal=g;hole.spin=mini.spin=s==='think'?2.2:1}
+let talking=0;// fake speech envelope while listening
+function voiceLevel(dt){if(vs==='listen'||vs==='dict'){talking+=dt;hole.goal=mini.goal=.45+.4*Math.abs(Math.sin(talking*7))*Math.abs(Math.sin(talking*2.3))}}
+async function typeHeard(text){$('heard').textContent='';for(const w of text.split(' ')){$('heard').textContent+=($('heard').textContent?' ':'')+w;await wait(130)}}
+async function hear(text){// one full voice turn on the home screen
+  if(vs==='mute'||busy)return;busy=true;
+  setV('listen');$('reply').textContent='';await wait(500);await typeHeard(text);await wait(400);
+  setV('think');await wait(800);await run(text);busy=false}
+let busy=false;
+async function run(text){const t=norm(text);
+  if(/nota|diari|daily/.test(t)){$('reply').textContent='Abrindo as notas diárias.';setV('idle');await wait(600);location.hash='notas';return}
+  if(/sistema|maquina|pc|cpu/.test(t)){setV('idle');$('reply').textContent=`CPU em ${Math.round(M.cpu)}%, ${num.format(M.ram)} de 15 GB de RAM e a GPU em ${Math.round(M.gpu)}%. O Ollama está ${ollamaBusy>Date.now()?'rodando':'parado'}.`;return}
+  if(/edit|hoje|vault|cofre/.test(t)){setV('idle');$('reply').textContent=`Hoje você mexeu em ${DATA.today} ${DATA.today===1?'nota':'notas'}. A última foi “${DATA.recent[0][0]}”, ${ago(DATA.recent[0][1])}.`;return}
+  setV('idle');$('reply').textContent='No protótipo só entendo três comandos. No app do PC, o Claude responde qualquer pergunta aqui.'}
+const CMDS=['notas diárias','como está o sistema','o que eu editei hoje'];
+CMDS.forEach(c=>{const b=el('button','cmd',`“Jarvis, ${c}”`);b.type='button';b.onclick=()=>hear(c);$('cmds').append(b)});
+let simK=0;const simulate=()=>hear(CMDS[simK++%CMDS.length]);
+$('hole').addEventListener('click',simulate);
+$('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();simulate()}});
+addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)){e.preventDefault();simulate()}});
+$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v)return;$('cmd').value='';hear(v.replace(/^jarvis[,\s]*/i,''))});
+$('mute').onclick=()=>{const off=vs!=='mute';if(off&&vs!=='idle')return;setV(off?'mute':'idle');$('mute').setAttribute('aria-pressed',off);$('mute').textContent=off?'mic desligado':'mic ligado'};
+
+// ================= notes page =================
+const today=fmt({day:'2-digit'})+' - '+fmt({weekday:'long'});
+let cur=DATA.dailies.findIndex(d=>d[0]===today);if(cur<0){DATA.dailies.unshift([today,DATA.dailies[0]?.[1]||'08-DNT 📅 Daily Notes']);cur=0}
+const drafts={};
+function openDay(i){drafts[cur]=$('text').value;cur=i;const[name,folder]=DATA.dailies[i];
+  $('n-title').textContent=i===0?fmt({weekday:'long',day:'numeric',month:'long'}).replace(/^./,c=>c.toUpperCase()):name.replace(/^\d+ - /,'').replace(/^./,c=>c.toUpperCase())+', '+name.slice(0,2);
+  $('n-path').textContent=folder+'/'+name+'.md';$('text').value=drafts[i]??'';
+  $('text').placeholder=i===0?'Escreva, ou diga “Jarvis, ditar”…':'O conteúdo desta nota fica no seu PC; o protótipo não carrega o texto das notas.';
+  [...$('days').children].forEach((b,k)=>b.setAttribute('aria-current',k===i));prevText=null;$('undo').disabled=true}
+DATA.dailies.forEach(([n],i)=>{const b=el('button','day',i===0?'Hoje':n.replace(/^(\d+) - (.*)$/,(m,d,w)=>`${w.split('-')[0]} ${d}`));b.type='button';b.onclick=()=>openDay(i);$('days').append(b)});
+
+const SAMPLE='então hoje eu fechei o protótipo novo do jarvis com o buraco negro no meio e as informações orbitando sem caixa o que eu gostei é que ficou mais limpo e mais vivo amanhã eu preciso testar o ollama na rx 580 com vulkan e ver qual modelo cabe nos oito giga e também instalar o open wake word pra testar a palavra jarvis e lembrar de comprar filamento petg preto';
+const SAMPLE_OUT=`## Jarvis
+- Protótipo novo fechado: buraco negro no centro, informações orbitando sem caixas. Ficou mais limpo e mais vivo.
+
+## Próximos passos
+- [ ] Testar o Ollama na RX 580 com Vulkan e ver qual modelo cabe nos 8 GB. #to-do
+- [ ] Instalar o openWakeWord e testar a palavra “Jarvis”. #to-do
+- [ ] Comprar filamento PETG preto. #to-do`;
+let recTimer=null,prevText=null;
+function stopDict(){clearInterval(recTimer);recTimer=null;$('dictate').setAttribute('aria-pressed','false');$('dictate').textContent='Ditar';setV('idle')}
+function startDict(){if(recTimer){stopDict();return}
+  setV('dict');$('dictate').setAttribute('aria-pressed','true');$('dictate').textContent='Parar';
+  const ta=$('text'),words=SAMPLE.split(' ');let k=0;if(ta.value&&!ta.value.endsWith('\n'))ta.value+='\n\n';
+  recTimer=setInterval(()=>{ta.value+=(k?' ':'')+words[k++];ta.scrollTop=ta.scrollHeight;if(k>=words.length){stopDict();$('n-hint').textContent='Ouvi “pronto”. Diga “Jarvis, organizar” para o Ollama reescrever.'}},reduce.matches?0:85)}
+async function tidyText(){const ta=$('text'),raw=ta.value.trim();if(!raw){$('n-hint').textContent='Não há texto para organizar.';return}
+  if(recTimer)stopDict();prevText=ta.value;setV('think');ollamaBusy=Date.now()+3500;$('tidy').disabled=true;$('n-hint').textContent='Ollama reescrevendo na GPU…';await wait(2200);
+  // shortcut: fixed rewrite for the sample, sentence split otherwise; the real app sends the text to the local model
+  ta.value=norm(raw).includes(norm(SAMPLE.slice(0,40)))?raw.replace(SAMPLE,'').trim().replace(/^$/,'')+(raw.replace(SAMPLE,'').trim()?'\n\n':'')+SAMPLE_OUT
+    :raw.split(/(?<=[.!?])\s+|\n+/).filter(Boolean).map(s=>'- '+s[0].toUpperCase()+s.slice(1)).join('\n');
+  $('tidy').disabled=false;$('undo').disabled=false;setV('idle');$('n-hint').textContent='Pronto. Revise; “Desfazer” volta ao texto original.'}
+$('dictate').onclick=startDict;$('tidy').onclick=tidyText;
+$('undo').onclick=()=>{if(prevText==null)return;$('text').value=prevText;prevText=null;$('undo').disabled=true;$('n-hint').textContent='Texto original de volta.'};
+$('save').onclick=()=>{$('n-hint').textContent=`No app do PC, isto é gravado em ${$('n-path').textContent}. No protótipo nada foi salvo.`};
+const NCMDS=[['ditar',startDict],['organizar',tidyText],['voltar',()=>{location.hash=''}]];let nK=0;
+async function miniVoice(){if(vs!=='idle')return;const[w,fn]=NCMDS[nK++%NCMDS.length];setV('listen');$('n-hint').textContent=`“Jarvis, ${w}”`;await wait(900);setV('idle');fn()}
+$('mini').addEventListener('click',miniVoice);$('mini').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();miniVoice()}});
+
+// ================= routing + loop =================
+function route(){const notes=location.hash==='#notas';$('home').hidden=notes;$('notes').hidden=!notes;
+  document.title=notes?'Jarvis · Notas diárias':'Jarvis';
+  if(notes){openDay(cur);mini.resize();$('text').focus()}else{hole.resize();stars($('sky'))}}
+addEventListener('hashchange',route);
+addEventListener('resize',()=>{hole.resize();mini.resize();stars($('sky'))});
+let last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;voiceLevel(dt);
+  if(!$('home').hidden){hole.frame(dt);placeOrbit(now/1000)}else mini.frame(dt);
+  requestAnimationFrame(loop)}
+setV('idle');fillOrbit();route();requestAnimationFrame(loop);
+document.fonts&&document.fonts.ready.then(()=>placeOrbit(performance.now()/1000));
+</script>
