@@ -1,15 +1,14 @@
 # Atalhos da Fedora
 
 O Ollama lê este arquivo para escolher o atalho de cada pedido; o código em `atalhos.py` executa.
-Pode editar os exemplos, os sites e as palavras à vontade. Atalho novo aqui sem código lá vai para o Claude.
+Pode editar os exemplos e os sites à vontade. Apps e jogos instalados entram sozinhos. Atalho novo aqui sem código lá vai para o Claude.
 
 ## Rápidos (resposta direta, sem Claude)
 
 - `hora`: diz a hora certa. Ex.: "que horas são", "me diz as horas", "fala a hora aí"
 - `data`: diz o dia de hoje. Ex.: "que dia é hoje", "hoje é dia quanto", "que dia da semana é hoje"
 - `abrir_pasta` (arg = nome da pasta): Downloads, Documentos, Imagens, Músicas, Vídeos, Área de trabalho, pasta pessoal, Projetos, ou outra pasta da pasta pessoal. Ex.: "abre meus downloads", "abre a pasta projetos"
-- `abrir_app` (arg = nome do app ou do jogo): abre um programa instalado ou um jogo da Steam. Ex.: "abre o chrome", "abre o dolphin", "abre o obsidian", "abre a calculadora", "abre o orca slicer", "abre a steam", "abre o cities skylines 2", "abre o cs2", "bota o terraria"
-- `abrir_site` (arg = nome do site da lista "Sites" abaixo): Ex.: "abre o youtube", "abre o gmail", "abre o trailhead", "entra no github"
+- `abrir` (arg = o NOME OFICIAL do programa, jogo da Steam ou site, como aparece no menu ou na loja, em inglês se for o caso): o ouvido escreve nomes em inglês do jeito que soam; escreva o nome certo. Ex.: "abre o espectáculo" → Spectacle, "abre o console" → Konsole, "bota o gta" → Grand Theft Auto V, "abre o cs2" → Counter-Strike 2, "abre o trilhear" → trailhead, "abre a calculadora" → KCalc, "abre o youtube" → youtube, "abre a steam" → Steam
 - `pesquisar_web` (arg = termo): abre uma busca do Google no navegador. Só quando o pedido diz pesquisar, procurar ou buscar NO GOOGLE/NA INTERNET. Ex.: "pesquisa preço do PLA", "procura no google suporte de filamento", "busca na internet receita de pão"
 - `volume` (arg = número de 0 a 100, "mais", "menos" ou "mudo"): volume da caixa de som. Ex.: "volume 40", "aumenta o volume", "abaixa o som", "muta"
 - `brilho` (arg = número de 0 a 100, "mais" ou "menos"): brilho dos monitores. Ex.: "brilho 50", "diminui o brilho", "aumenta o brilho"
@@ -40,9 +39,3 @@ Pode editar os exemplos, os sites e as palavras à vontade. Atalho novo aqui sem
 - shopee: https://shopee.com.br
 - github: https://github.com
 
-## Palavras (nomes em inglês)
-
-O ouvido transcreve em português e escreve esses nomes do jeito que soam ("espectáculo" = Spectacle, "console" = Konsole, "trilhear" = Trailhead, "obsidiana" = Obsidian). No `arg`, escreva sempre o nome certo desta lista quando o pedido soar parecido com um deles.
-
-
-Chrome, Obsidian, Spectacle, Dolphin, Konsole, Kate, Discord, Steam, Spotify, Firefox, Minecraft, OrcaSlicer, CrealityPrint, OpenSCAD, Visual Studio Code, LibreOffice, Okular, KCalc, LocalSend, RustDesk, Prism Launcher, MakerFlow, Claude, YouTube, Gmail, Trailhead, WhatsApp, Shopee, GitHub, Google, print, timer, PLA, Steam, Counter-Strike, Cities: Skylines, Grand Theft Auto, GTA, ARK, Terraria, tModLoader, Albion Online, The Sandbox Evolution

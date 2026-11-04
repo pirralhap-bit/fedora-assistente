@@ -80,13 +80,11 @@ def _apps():
         if e.get("NoDisplay", "").lower() == "true" or e.get("Type") != "Application":
             continue
         names = {fold(v) for k, v in e.items() if k.startswith("name") or k.startswith("genericname")}
-        yield pathlib.Path(f).stem, names
+        generic = e.get("GenericName[pt_BR]") or e.get("GenericName") or ""
+        yield pathlib.Path(f).stem, names, e.get("Name", "") + (f" ({generic})" if generic else "")
 
 
 _STEAM = HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
-_ROMANO = {"2": "ii", "3": "iii", "4": "iv", "5": "v"}
-
-
 def _jogos():
     """(appid, name) of installed Steam games, every library, without Proton/runtimes."""
     libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(errors="replace")) \
@@ -97,45 +95,6 @@ def _jogos():
             appid, name = re.search(r'"appid"\s+"(\d+)"', t), re.search(r'"name"\s+"([^"]+)"', t)
             if appid and name and not re.search(r"proton|runtime|redistributable", name.group(1), re.I):
                 yield appid.group(1), name.group(1)
-
-
-def _palavras(name):
-    return [_ROMANO.get(w, w) for w in re.findall(r"\w+", fold(name))]
-
-
-def abrir_jogo(arg):
-    """'cities skylines 2', 'gta', 'cs2', 'counter strike' -> launches through Steam."""
-    a = _palavras(arg)
-    if not a:
-        return None
-    for appid, name in _jogos():
-        w = _palavras(name)
-        cru = re.findall(r"\w+", fold(name))   # before 2 -> ii, so "Counter-Strike 2" -> "cs2"
-        sigla = "".join(x[0] for x in cru if x.isalpha()) + "".join(x for x in cru if x.isdigit())
-        junto = "".join(a)
-        if all(x in w for x in a) or (len(junto) >= 2 and (sigla.startswith(junto) or junto == "".join(x[0] for x in w))) or \
-                difflib.SequenceMatcher(None, " ".join(a), " ".join(w)).ratio() >= 0.8:
-            _detach(["xdg-open", f"steam://rungameid/{appid}"])
-            return f"Abrindo {name} pela Steam."
-    return None
-
-
-def abrir_app(arg, msg=""):
-    a = re.sub(r"^(o |a |um |uma |app |aplicativo |programa )+", "", fold(arg))
-    if not a:
-        return None
-    apps = list(_apps())
-    squash = a.replace(" ", "")
-    exact = [i for i, names in apps if a in names or squash in {n.replace(" ", "") for n in names}]
-    loose = exact or [i for i, names in apps if any(n.startswith(a) or a in n.split() for n in names)]
-    if not loose:   # whisper spelled an English name the Portuguese way
-        by_name = {n.replace(" ", ""): i for i, names in apps for n in names}
-        close = difflib.get_close_matches(squash, list(by_name), n=1, cutoff=0.75)
-        loose = [by_name[close[0]]] if close else []
-    if not loose:
-        return abrir_jogo(arg)
-    _detach(["gtk-launch", loose[0]])
-    return f"Abrindo {arg.strip()}."
 
 
 def volume(arg, msg=""):
@@ -188,14 +147,39 @@ def _browser(url):
     _detach(["google-chrome-stable", url])
 
 
-def abrir_site(arg, msg=""):
-    sites = _section("Sites")
-    a = re.sub(r"^(o |a |site (do |da )?)+|\.com.*$|\s", "", fold(arg))
-    key = a if a in sites else next(iter(difflib.get_close_matches(a, list(sites), n=1, cutoff=0.75)), None)
-    if not key:
+def inventario():
+    """Everything 'abrir' can open, id -> (name, how). Generated each time: install a game and it is there."""
+    out = {f"app:{i}": (name, ["gtk-launch", i]) for i, _, name in _apps()}
+    out.update({f"jogo:{i}": (name, ["xdg-open", f"steam://rungameid/{i}"]) for i, name in _jogos()})
+    out.update({f"site:{k}": (k, ["google-chrome-stable", url]) for k, url in _section("Sites").items()})
+    return dict(sorted(out.items()))   # stable order: the prompt prefix stays cacheable
+
+
+def _achar(nome):
+    """Installed item for the official name the model wrote. Generic: same name, then all its words, then the closest."""
+    alvo = re.findall(r"\w+", fold(nome))
+    if not alvo:
         return None
-    _browser(sites[key])
-    return f"Abrindo o {key}."
+    itens = [(re.findall(r"\w+", fold(v[0].split(" (")[0])), v) for v in inventario().values()]
+    for nomes, v in itens:
+        if nomes == alvo:
+            return v
+    contem = [(len(n), v) for n, v in itens if set(alvo) <= set(n)] or \
+        [(len(re.findall(r"\w+", v[0])), v) for n, v in itens if set(alvo) <= set(re.findall(r"\w+", fold(v[0])))]  # "calculadora" -> KCalc (Calculadora científica)
+    if contem:
+        return min(contem, key=lambda x: x[0])[1]          # "steam" -> Steam, not "Steam Linux Runtime"
+    ratio, v = max(((difflib.SequenceMatcher(None, " ".join(alvo), " ".join(n)).ratio(), v) for n, v in itens),
+                   key=lambda x: x[0])
+    return v if ratio >= 0.7 else None
+
+
+def abrir(arg, msg=""):
+    """The model writes the official name (it knows GTA, Konsole, Trailhead); the code finds it among what is installed."""
+    item = _achar(arg)
+    if not item:
+        return None
+    _detach(item[1])
+    return f"Abrindo {item[0].split(' (')[0]}."
 
 
 def pesquisar_web(arg, msg=""):
@@ -327,7 +311,7 @@ def clima(arg, msg=""):
     return out + (f" Agora faz {round(d['current']['temperature_2m'])} graus." if not i else "")
 
 
-HANDLERS = {f.__name__.rstrip("_"): f for f in (hora, data, abrir_pasta, abrir_app, abrir_site, pesquisar_web, volume, brilho,
+HANDLERS = {f.__name__.rstrip("_"): f for f in (hora, data, abrir_pasta, abrir, pesquisar_web, volume, brilho,
                                                  midia, print_, timer, clima, sistema, descarregar_modelo, desligar_ollama)}
 
 
@@ -337,7 +321,7 @@ def classify(message):
     if modelo.MODEL not in (sysinfo.ollama() or []):
         return None
     prompt = (CATALOG.read_text(encoding="utf-8") +   # same prefix every time: Ollama reuses its cache
-              '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum".\n'
+              '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum". Se não for claramente um deles, use "nenhum".\n'
               'Responda só JSON: {"atalho": "<nome exato da lista>", "arg": "<texto ou vazio>"}\n'
               f"Pedido: {message}")
     body = json.dumps({"model": modelo.MODEL, "prompt": prompt, "stream": False, "format": "json", "think": False,
@@ -355,7 +339,7 @@ def classify(message):
 
 # the model picks, the code double-checks: a pick whose verb isn't in the sentence goes to Claude
 _ABRIR = r"\b(abr|entr|inici|execut|rod|lig|bot|coloc|mostr)"
-GUARD = {"abrir_app": _ABRIR, "abrir_site": _ABRIR, "abrir_pasta": _ABRIR,
+GUARD = {"abrir": _ABRIR, "abrir_pasta": _ABRIR,
          "pesquisar_web": r"\b(pesquis|procur|busc|googl)"}
 _NUNCA = r"\b(fech|encerr|mat[ae]|sai[rd]|apag|delet|remov|exclu|deslig)"
 
@@ -375,9 +359,6 @@ def route(message):
     name, arg = picked
     try:
         reply = HANDLERS[name](arg, message)
-        if reply is None and name in ("abrir_app", "abrir_site"):   # "abre o whatsapp": no app installed, but a site
-            name = "abrir_site" if name == "abrir_app" else "abrir_app"
-            reply = HANDLERS[name](arg, message)
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, AttributeError, TypeError):
         return None
     if reply:
@@ -391,26 +372,22 @@ if __name__ == "__main__":
     assert _pasta("meus downloads") and _pasta("meus downloads").is_dir()
     assert _pasta("pasta projetos") == HOME / "Projetos", _pasta("pasta projetos")
     assert _pasta("xyz inexistente") is None
-    assert any("chrome" in n for i, names in _apps() for n in names)
-    jogos = dict((n, i) for i, n in _jogos())
-    if jogos:   # matching only (not launching): monkeypatch the launcher
-        _real, launched = _detach, []
-        globals()["_detach"] = launched.append
-        for falado, nome in [("cities skylines 2", "Cities: Skylines II"), ("gta", "Grand Theft Auto V Enhanced"),
-                             ("cs2", "Counter-Strike 2"), ("counter strike", "Counter-Strike 2"), ("terraria", "Terraria")]:
-            if nome in jogos:
-                assert abrir_jogo(falado) and launched[-1][-1].endswith(jogos[nome]), (falado, launched[-1:])
-        assert abrir_jogo("jogo que não existe") is None
-        globals()["_detach"] = _real
+    inv = inventario()
+    assert "app:google-chrome" in inv and "site:youtube" in inv and any(k.startswith("jogo:") for k in inv)
     assert duracao("20 minutos") == 1200 and duracao("1 hora e meia") == 5400 and duracao("meia hora") == 1800
     assert duracao("uma hora e 15 minutos") == 4500 and duracao("tirar a peça") is None
-    assert "youtube" in _section("Sites") and _section("Sites")["trailhead"].startswith("https://")
+    assert _section("Sites")["trailhead"].startswith("https://")
     # routing with the real model: every phrase must land on the right shortcut (handlers not run)
     cases = [("que horas são", "hora"), ("me diz as horas", "hora"), ("que dia é hoje?", "data"),
-             ("abre meus downloads", "abrir_pasta"), ("abre o chrome pra mim", "abrir_app"), ("aumenta o volume", "volume"),
+             ("abre meus downloads", "abrir_pasta"), ("abre o chrome pra mim", "abrir:app:google-chrome"), ("aumenta o volume", "volume"),
              ("volume 30", "volume"), ("como está o sistema", "sistema"), ("descarrega o modelo", "descarregar_modelo"),
              ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "clima"), ("vai chover hoje?", "clima"),
-             ("abre o youtube", "abrir_site"), ("pesquisa preço do PLA", "pesquisar_web"), ("tira um print", "print"),
+             ("abre o youtube", "abrir:site:youtube"), ("abre o gta", "abrir:jogo:3240220"), ("bota o cs2", "abrir:jogo:730"),
+             ("abre o cities skylines 2", "abrir:jogo:949230"), ("abre o espectáculo", "abrir:app:org.kde.spectacle"),
+             ("abre o console", "abrir:app:org.kde.konsole"), ("abre o obsidiana", "abrir:app:md.obsidian.Obsidian"),
+             ("abre o trilhear", "abrir:site:trailhead"), ("abre o whatsapp", "abrir:site:whatsapp"),
+             ("abre a steam", "abrir:app:com.valvesoftware.Steam"), ("abre a calculadora", "abrir:app:org.kde.kcalc"),
+             ("abre o orca slicer", "abrir:app:com.orcaslicer.OrcaSlicer"), ("pesquisa preço do PLA", "pesquisar_web"), ("tira um print", "print"),
              ("brilho 50", "brilho"), ("pausa a música", "midia"), ("pula essa", "midia"), ("timer de 20 minutos", "timer"),
              ("me avisa em 1 hora pra tirar a peça da impressora", "timer"), ("quanto custa o PLA hoje?", "nenhum"),
              ("desliga o computador", "nenhum"),
@@ -418,7 +395,12 @@ if __name__ == "__main__":
     if modelo.MODEL in (sysinfo.ollama() or []):
         def pick(m):
             c = classify(m)
-            return c[0] if c and c[0] in HANDLERS and _confere(c[0], m) else "nenhum"
+            if not (c and c[0] in HANDLERS and _confere(c[0], m)):
+                return "nenhum"
+            if c[0] != "abrir":
+                return c[0]
+            item = _achar(c[1])
+            return "abrir:" + next((k for k, v in inventario().items() if v is item or v == item), "?") if item else "nenhum"
         bad = [(m, want, classify(m)) for m, want in cases if pick(m) != want]
         assert not bad, bad
         print(f"roteamento ok ({len(cases)} frases)")
