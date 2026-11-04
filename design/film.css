@@ -66,3 +66,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{background:rgba(
 .rec.on{box-shadow:0 0 18px rgba(255,122,92,.35)}
 .field label{font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;font-size:11px}
 .hint{font-family:var(--mono)}
+
+.item{border-left:0;box-shadow:inset 2px 0 0 transparent}
+.item:hover{box-shadow:inset 2px 0 0 var(--accent)}
+.reader{background:rgba(3,12,17,.92);border-color:var(--accent);box-shadow:0 0 24px rgba(94,230,255,.18)}
+.rtitle{font-family:var(--sans);color:var(--accent)}
+.card{border-radius:0;background:var(--accent-soft);border-left:2px solid var(--accent)}
+.clabel{font-family:var(--mono);letter-spacing:.16em;color:var(--accent)}
+.scope button{border-radius:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;font-size:11px}
+/* dictation reads like paper, not neon: no glow, no scanlines, softer ink */
+body.dictating::after{display:none}
+body.dictating .dictpane textarea{background:#0c1417;color:#dfe6e3;border-color:rgba(223,230,227,.14);font-family:var(--sans);font-size:17px;letter-spacing:.01em;box-shadow:none}
+body.dictating .dictpane #out{font:15px/1.7 "Share Tech Mono",ui-monospace,monospace;color:#cfd8d4}
+body.dictating .dictpane textarea:focus-visible{border-color:rgba(94,230,255,.5);box-shadow:none}
+body.dictating .dictpane .field label{color:#9fb1b4}

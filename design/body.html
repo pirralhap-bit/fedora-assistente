@@ -34,6 +34,26 @@
       <button class="ib" id="fit" aria-label="Ver o vault inteiro">⤢</button>
     </div>
     <div class="legend" id="legend"></div>
+    <aside class="reader" id="reader" aria-labelledby="r-title" hidden>
+      <div class="rhead">
+        <div class="rmeta"><span class="rpath" id="r-path"></span><h2 class="rtitle" id="r-title"></h2></div>
+        <button class="ib" type="button" id="r-close" aria-label="Fechar nota">×</button>
+      </div>
+      <div class="card">
+        <div class="clabel">Resumo <span class="note">Claude</span></div>
+        <p id="r-sum"></p>
+      </div>
+      <div class="rbody">
+        <div class="clabel">Conteúdo</div>
+        <p class="muted" id="r-body"></p>
+        <div class="clabel">Ligações <span id="r-n"></span></div>
+        <ul class="list" id="r-links"></ul>
+      </div>
+      <div class="ractions">
+        <button type="button" class="ghost" id="r-dict">Ditar nesta nota</button>
+        <button type="button" class="ghost" id="r-save">Salvar resumo no Inbox</button>
+      </div>
+    </aside>
   </main>
 
   <section class="pane dictpane" id="p-dict" aria-label="Ditado" hidden>
@@ -73,6 +93,10 @@
     <div class="panel" id="p-chat">
       <div class="msgs" id="msgs" aria-live="polite"></div>
       <div class="sugg" id="sugg"></div>
+      <div class="scope" role="group" aria-label="Onde procurar">
+        <button type="button" id="s-vault" aria-pressed="true">No vault</button>
+        <button type="button" id="s-web" aria-pressed="false">Na web</button>
+      </div>
       <form id="f">
         <label class="sr" for="q">Mensagem para o Jarvis</label>
         <input id="q" name="mensagem" autocomplete="off" placeholder="Pergunte ao Jarvis…">

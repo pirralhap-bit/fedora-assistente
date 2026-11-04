@@ -63,7 +63,7 @@ function noteBtn(i,label,meta,swatch){
   b.title=N[i].t;b.addEventListener('click',()=>focusNode(i,true));li.append(b);return li}
 const projects=DATA.projects.map(([name,best,count])=>{
   const hub=N.findIndex(n=>n.f.includes(name)&&/hub/i.test(n.t));return[name.replace(/^PRJ-[A-Z0-9]+-\d+\s*/,''),hub>=0?hub:best,count]});
-$('projects').replaceChildren(...projects.map(([n,i,c])=>noteBtn(i,n,c+(c===1?' nota':' notas'),false)));
+$('projects').replaceChildren(...projects.map(([n,i,c])=>noteBtn(i,n,c+(c===1?' nota':' notas'),true)));
 const rel=new Intl.RelativeTimeFormat('pt-BR',{numeric:'auto'});
 const ago=ts=>{const h=Math.round((ts*1000-Date.now())/36e5);return Math.abs(h)<24?rel.format(h,'hour'):rel.format(Math.round(h/24),'day')};
 $('recent').replaceChildren(...DATA.recent.map(([i,ts])=>noteBtn(i,N[i].t.replace(/\.excalidraw$/,' (desenho)'),ago(ts),true)));
@@ -143,9 +143,28 @@ new MutationObserver(recolor).observe(document.documentElement,{attributes:true,
 function go(t){if(reduce.matches){view=t;target=null;draw();return}const was=target;target=t;if(!was)requestAnimationFrame(anim)}
 function anim(){if(!target)return;['x','y','s'].forEach(k=>view[k]+=(target[k]-view[k])*.15);draw();
   if(Math.abs(target.x-view.x)+Math.abs(target.y-view.y)+Math.abs(target.s-view.s)*100<.4){view={...target};target=null;draw()}else requestAnimationFrame(anim)}
-function focusNode(i,announce){focus=i;go({x:P[i].x,y:P[i].y,s:Math.max(view.s,2.4)});
+function focusNode(i,announce){focus=i;go({x:P[i].x,y:P[i].y,s:Math.max(view.s,2.4)});openReader(i);
   if(announce){const n=[...nb[i]];sys(`${N[i].t} — ${N[i].f||'raiz'}. ${n.length?`Ligada a ${n.length} ${n.length===1?'nota':'notas'}.`:'Nota solta, sem ligações.'}`)}}
-function clearFocus(){focus=-1;draw()}
+function clearFocus(){focus=-1;$('reader').hidden=true;draw()}
+
+// ---- note reader: opens with any focused note
+function openReader(i){
+  const n=N[i],links=[...nb[i]].sort((a,b)=>deg[b]-deg[a]);
+  $('r-title').textContent=n.t;$('r-path').textContent=(n.f||'raiz')+' /';
+  const byG={};links.forEach(k=>byG[N[k].g]=(byG[N[k].g]||0)+1);
+  const topG=Object.entries(byG).sort((a,b)=>b[1]-a[1])[0];
+  $('r-sum').textContent=links.length
+    ?`Fica em ${short(n.g)} e se liga a ${links.length} ${links.length===1?'nota':'notas'}${topG?`, a maioria em ${short(topG[0])}`:''}. As mais conectadas: ${links.slice(0,3).map(k=>N[k].t).join(', ')}.`
+    :`Fica em ${short(n.g)} e não tem ligações. Vale ligar a uma nota de projeto ou de índice.`;
+  $('r-body').textContent='No app do PC, o texto da nota aparece aqui e o Claude escreve o resumo acima a partir dele. O protótipo não leva o conteúdo das notas, só títulos e ligações.';
+  $('r-n').textContent=links.length?`· ${links.length}`:'';
+  $('r-links').replaceChildren(...links.slice(0,12).map(k=>noteBtn(k,N[k].t,String(deg[k]),true)));
+  recolor();$('reader').hidden=false;$('reader').dataset.i=i}
+$('r-close').onclick=clearFocus;
+$('r-dict').onclick=()=>{const i=+$('reader').dataset.i,o=el('option',null,'Nota aberta · '+N[i].t);o.value='open';
+  [...$('dest').options].filter(x=>x.value==='open').forEach(x=>x.remove());$('dest').prepend(o);$('dest').value='open';
+  DEST.splice(0,DEST.length,...DEST.filter(d=>d[0]!=='open'),['open','',(N[i].f?N[i].f+'/':'')+N[i].t+'.md']);showMode(true);$('rec').focus()};
+$('r-save').onclick=()=>sys(`Resumo de "${N[+$('reader').dataset.i].t}" iria para 00-INB 📥 Inbox/_a-processar. No protótipo nada é gravado.`);
 
 // pan, pinch, wheel, click
 const ptr=new Map();let drag=null,pinch=null;
@@ -182,8 +201,21 @@ const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 function search(q){const w=norm(q).split(/[^a-z0-9]+/).filter(x=>x.length>2);if(!w.length)return[];
   return N.map((n,i)=>{const t=norm(n.t),f=norm(n.f);return[i,w.reduce((s,x)=>s+(t.includes(x)?3:f.includes(x)?1:0),0)+deg[i]*.01]})
     .filter(x=>x[1]>=1).sort((a,b)=>b[1]-a[1]).slice(0,4).map(x=>x[0])}
+let web=false;
+function setScope(w){web=w;$('s-vault').setAttribute('aria-pressed',!w);$('s-web').setAttribute('aria-pressed',w);
+  $('q').placeholder=w?'Pesquisar na web…':'Pergunte ao Jarvis…';$('q').focus()}
+$('s-vault').onclick=()=>setScope(false);$('s-web').onclick=()=>setScope(true);
+function askWeb(q){
+  const m=el('div','msg jar');m.append(el('span','who','Jarvis · web'));
+  const card=el('div','card');card.append(el('div','clabel','Resumo da pesquisa'));
+  card.append(el('p',null,`No app do PC, o Claude pesquisa "${q}", lê as páginas e escreve aqui um resumo curto, com cada afirmação ligada à fonte.`));
+  const src=el('ol','sources');['primeira fonte','segunda fonte','terceira fonte'].forEach(t=>src.append(el('li',null,`título e site da ${t}`)));
+  card.append(src);const b=el('button','ghost','Salvar resumo no Inbox');b.type='button';
+  b.onclick=()=>sys('O resumo iria para 00-INB 📥 Inbox/_a-processar com as fontes. No protótipo nada é gravado.');
+  card.append(b);m.append(card);push(m)}
 function ask(q){
   const you=el('div','msg you');you.append(el('p',null,q));push(you);
+  if(web){askWeb(q);return}
   const hits=search(q),m=el('div','msg jar');m.append(el('span','who','Jarvis'));
   if(!hits.length){clearFocus();m.append(el('p',null,'Não achei nota sobre isso no vault. Com o Claude ligado, eu responderia mesmo assim, sem citar nota.'));push(m);return}
   m.append(el('p',null,`Com o Claude ligado, eu responderia usando ${hits.length===1?'esta nota':'estas '+hits.length+' notas'}. Clique para ver no grafo:`));
