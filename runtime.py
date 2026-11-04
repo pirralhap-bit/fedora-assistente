@@ -34,6 +34,7 @@ DENY = ["Bash(shutdown:*)", "Bash(poweroff:*)", "Bash(reboot:*)", "Bash(halt:*)"
         "Bash(systemctl suspend:*)", "Bash(systemctl hibernate:*)", "Bash(loginctl poweroff:*)",
         "Bash(loginctl reboot:*)", "Bash(rm:*)", "Bash(shred:*)",
         "Bash(mkfs:*)", "Bash(dd:*)"]
+LIMITS = {}   # last seen plan usage: {"five_hour": {"used": .29, "resets": epoch}, ...}
 RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
 RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "").strip()
@@ -243,6 +244,9 @@ def _run_locked(message, session_id=None, system=None):
 
             if kind == "rate_limit_event":
                 info = ev.get("rate_limit_info") or {}
+                # official plan usage (0..1) per window; the HUD reads it from /api/system
+                for name, w in (info.get("unifiedWindows") or {}).items():
+                    LIMITS[name] = dict(used=w.get("utilization"), resets=w.get("resetsAt"))
                 yield dict(t="ratelimit", status=info.get("status"),
                            window=info.get("rateLimitType"), resets=info.get("resetsAt"))
                 continue

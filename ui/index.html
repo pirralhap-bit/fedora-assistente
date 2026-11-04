@@ -34,6 +34,8 @@ button{cursor:pointer;touch-action:manipulation}
 .orbit .s{font:300 11px var(--data);color:var(--faint)}
 .orbit.left{text-align:right}
 .orbit .v.hot{color:var(--warn)}
+.orbit .bar{height:1px;width:132px;margin-top:5px;background:linear-gradient(90deg,var(--hot) var(--p),var(--faint) var(--p))}
+.orbit .v.hot+.s+.bar{background:linear-gradient(90deg,var(--warn) var(--p),var(--faint) var(--p))}
 .voice{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   width:min(640px,calc(100% - 32px));display:grid;gap:10px;justify-items:center;text-align:center}
 .state{font:400 11px var(--data);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;gap:10px;align-items:center}
@@ -213,21 +215,28 @@ function pregao(){const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{ti
   // shortcut: ignores B3 holidays; use the b3-* calendar when it matters
   const m=+p.hour*60+ +p.minute;return!['Sat','Sun'].includes(p.weekday)&&m>=600&&m<1020}
 const dash='—';
+// plan usage comes from Claude's own rate_limit_event, so it only refreshes after a question
+const use=w=>{const u=S.claude&&S.claude[w];return u&&u.used!=null?u.used:null};
+const pct=w=>use(w)==null?dash:Math.round(use(w)*100)+'%';
+const renova=(w,o)=>use(w)==null?'aparece depois da 1ª pergunta':'renova '+new Date(S.claude[w].resets*1000).toLocaleString('pt-BR',{timeZone:tz,...o});
 const ITEMS=[
   ['left',216,'hora',()=>fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>fmt({weekday:'long',day:'numeric',month:'long'})],
   ['left',198,'cpu',()=>S.cpu==null?dash:Math.round(S.cpu)+'%',()=>S.threads?S.threads+' threads':''],
   ['left',180,'ram',()=>S.ram==null?dash:`${num.format(S.ram)} / ${num.format(S.ram_total)} GB`,()=>'memória em uso'],
   ['left',162,'gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'sem leitura da placa'],
   ['left',144,'ollama',()=>S.ollama==null?'desligado':S.ollama.length?'carregado':'parado',()=>S.ollama&&S.ollama.length?S.ollama.join(', '):'nenhum modelo na memória'],
-  ['right',-30,'b3',()=>pregao()?'pregão aberto':'pregão fechado',()=>pregao()?'fecha às 17h':'abre às 10h'],
-  ['right',-12,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
-  ['right',6,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
-  ['right',24,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
+  ['right',-45,'b3',()=>pregao()?'pregão aberto':'pregão fechado',()=>pregao()?'fecha às 17h':'abre às 10h'],
+  ['right',-27,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
+  ['right',-9,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
+  ['right',9,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
+  ['right',27,'claude · 5h',()=>pct('five_hour'),()=>renova('five_hour',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('five_hour')],
+  ['right',45,'claude · semana',()=>pct('seven_day'),()=>renova('seven_day',{weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('seven_day')],
 ];
-const orbitEls=ITEMS.map(([side])=>{const e=el('div','orbit '+side);e.append(el('div','k'),el('div','v'),el('div','s'));$('orbits').append(e);return e});
+const orbitEls=ITEMS.map(([side,,,,,bar])=>{const e=el('div','orbit '+side);e.append(el('div','k'),el('div','v'),el('div','s'));if(bar)e.append(el('div','bar'));$('orbits').append(e);return e});
 ITEMS.forEach(([, ,k],i)=>orbitEls[i].querySelector('.k').textContent=k);
-function fillOrbit(){ITEMS.forEach(([, , ,v,s],i)=>{const e=orbitEls[i];e.querySelector('.v').textContent=v();e.querySelector('.s').textContent=s();
-  e.querySelector('.v').classList.toggle('hot',i===1&&S.cpu>80||i===3&&S.gpu&&S.gpu.busy>80)})}
+function fillOrbit(){ITEMS.forEach(([, , ,v,s,bar],i)=>{const e=orbitEls[i];e.querySelector('.v').textContent=v();e.querySelector('.s').textContent=s();
+  const b=bar&&bar();if(bar)e.style.setProperty('--p',((b||0)*100).toFixed(1)+'%');
+  e.querySelector('.v').classList.toggle('hot',i===1&&S.cpu>80||i===3&&S.gpu&&S.gpu.busy>80||b>.8)})}
 function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
   if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{const e=orbitEls[i],k=col[side]++;
       e.style.transform=`translate(${side==='left'?16:W/2+8}px,${hole.Y+hole.R*2.2+k*46}px)`;e.style.opacity=1});return}

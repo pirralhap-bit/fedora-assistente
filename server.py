@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._events()
 
         if p == "/api/system":
-            return self._json(sysinfo.snapshot())
+            return self._json(dict(sysinfo.snapshot(), claude=runtime.LIMITS))
 
         if p == "/api/vault":
             return self._json(notes.vault_summary())
