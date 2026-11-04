@@ -25,6 +25,7 @@ Configuração em `.env` (vault, permissão do Claude, porta, modelo do Ollama, 
 | `notes.py` | lista, lê e salva daily notes; recusa salvar se a nota mudou fora (Obsidian) |
 | `tidy.py` | manda o trecho ditado ao Ollama e devolve Markdown |
 | `listener.py` | ouvido sempre ligado: microfone (PipeWire) → detecção de fala → whisper; só reage a “Ok, Fedora” |
+| `speech.py` | voz: Piper (pt_BR faber) tocando direto na caixa de som com pw-play |
 | `voice.py` | (legado) áudio do navegador → whisper.cpp |
 | `ui/index.html` | a interface inteira (buraco negro + `#notas`) |
 

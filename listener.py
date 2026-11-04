@@ -20,6 +20,8 @@ import urllib.request
 import uuid
 import wave
 
+import speech
+
 RATE, FRAME = 16000, 320                      # 20 ms frames, 16-bit mono
 STT_URL = os.environ.get("WHISPER_URL", "http://127.0.0.1:8178/inference")   # small model, kept loaded
 NAME = os.environ.get("ASSISTANT_NAME", "Fedora")
@@ -239,6 +241,7 @@ class Ear:
                 print(f"[ouvido] {len(pcm) / 32000:.1f}s ouvi={heard!r} -> {'comando=' + repr(rest) if rest is not None else 'ignorado'}", flush=True)
             if rest is None:
                 return
+            speech.stop()                                        # "Ok, Fedora" interrupts her
             self.emit(dict(t="wake"))
             if len(rest) < 2:                                     # just the name: wait for the command
                 self.mode, self.deadline = "command", time.time() + 8

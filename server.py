@@ -36,6 +36,7 @@ import listener    # noqa: E402
 import memory      # noqa: E402
 import notes       # noqa: E402
 import runtime     # noqa: E402
+import speech      # noqa: E402
 import sysinfo     # noqa: E402
 import tidy        # noqa: E402
 import voice       # noqa: E402
@@ -159,11 +160,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "body too large"}, 413)
 
         if p == "/api/speak":
-            try:
-                text = (json.loads(raw or b"{}").get("text") or "").strip()
-                return self._bytes(voice.speak(text), "audio/mpeg")
-            except Exception as e:  # noqa: BLE001
-                return self._json({"error": str(e)[:200]}, 503)
+            text = str(json.loads(raw or b"{}").get("text") or "").strip()
+            if not text:
+                speech.stop()
+                return self._json({"ok": True})
+            if not speech.ready():
+                return self._json({"error": "Piper não encontrado (PIPER_BIN / PIPER_VOICE)"}, 503)
+            return self._json({"ok": speech.say(text)})
 
         if p == "/api/listen":
             try:
