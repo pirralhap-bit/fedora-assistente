@@ -32,7 +32,10 @@ def _load():
     subprocess.run(["systemctl", "--user", "start", "ollama"], capture_output=True, timeout=30)
     for _ in range(20):
         try:
-            return _call(-1)
+            _call(-1)
+            import atalhos              # late import: atalhos imports this module
+            atalhos.classify("oi")      # reads the catalog once now, so the first real shortcut isn't slow
+            return
         except OSError:
             time.sleep(1)
     print("[modelo] Ollama não respondeu; modelo não carregado", flush=True)

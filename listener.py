@@ -84,6 +84,7 @@ def whisper(url, pcm, timeout=120):
 class Ear:
     def __init__(self):
         self.on = True
+        self.discard_until = 0.0
         self.mode = "wake"
         self.deadline = 0.0
         self.force_end = False
@@ -145,6 +146,8 @@ class Ear:
                 return self.state()
             self.mode = "command" if action == "listen" else "dictate"
             self.deadline = time.time() + (8 if action == "listen" else 15)
+            # drop what is already buffered (her own voice) and let the speaker go quiet: only speech that starts now counts
+            self.discard_until = time.time() + 0.6
         elif action == "stop":
             self.force_end = True
             if self.mode != "wake":
@@ -195,7 +198,7 @@ class Ear:
             if now - last_level > 0.08:
                 last_level = now
                 self.emit(dict(t="level", v=round(min(1.0, lv / 4000), 3)))
-            if self.mode == "busy":                               # transcribing the last turn: don't cut a new one
+            if self.mode == "busy" or now < self.discard_until:   # transcribing, or her voice still in the room
                 speech, pre, loud = None, [], 0
                 continue
             if self.mode in ("command", "dictate") and speech is None and now > self.deadline:
@@ -253,6 +256,8 @@ class Ear:
             return
         self.emit(dict(t="state", v="think"))
         text = whisper(STT_URL, pcm, timeout=600)
+        if DEBUG:
+            print(f"[ouvido] {mode} {len(pcm) / 32000:.1f}s ouvi={text!r}", flush=True)
         self.mode = "wake"
         if mode == "dictate":
             self.emit(dict(t="dictation", text=text), keep=True)

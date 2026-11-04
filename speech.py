@@ -44,38 +44,46 @@ def stop():
             p.kill()
 
 
-def say(text):
-    """Speak in the background, cutting off whatever was being said."""
+def _play(text, then=None):
+    tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    # --raw: without it pw-play tries to sniff a file format on stdin and fails silently
+    play = subprocess.Popen(["pw-play", "--raw", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
+                            stdin=tts.stdout)
+    tts.stdout.close()
+    with _lock:
+        _procs.extend([tts, play])
+    try:
+        tts.stdin.write(re.sub(r"(?<=[.!?])\s+", "\n", text).encode() + b"\n")  # one sentence per line
+        tts.stdin.close()
+    except BrokenPipeError:
+        pass
+    play.wait()
+    tts.wait()
+    with _lock:
+        for p in (tts, play):
+            if p in _procs:
+                _procs.remove(p)
+    if then and play.returncode == 0:   # finished on its own, not cut off by stop()
+        then()
+
+
+def say(text, then=None):
+    """Speak in the background, cutting off whatever was being said. `then` runs once the voice has finished."""
     text = clean(text)
     if not text or not ready():
         return False
     stop()
-
-    def run():
-        tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        # --raw: without it pw-play tries to sniff a file format on stdin and fails silently
-        play = subprocess.Popen(["pw-play", "--raw", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
-                                stdin=tts.stdout)
-        tts.stdout.close()
-        with _lock:
-            _procs.extend([tts, play])
-        try:
-            tts.stdin.write(re.sub(r"(?<=[.!?])\s+", "\n", text).encode() + b"\n")  # one sentence per line
-            tts.stdin.close()
-        except BrokenPipeError:
-            pass
-        play.wait()
-        tts.wait()
-        with _lock:
-            for p in (tts, play):
-                if p in _procs:
-                    _procs.remove(p)
-
-    threading.Thread(target=run, daemon=True, name="speech").start()
+    threading.Thread(target=_play, args=(text, then), daemon=True, name="speech").start()
     return True
 
 
 if __name__ == "__main__":
+    import sys
+    if sys.argv[1:2] == ["--aviso"]:   # fired by a timer (atalhos.timer via systemd-run)
+        msg = " ".join(sys.argv[2:]) or "Seu timer terminou."
+        subprocess.run(["notify-send", "-a", "Fedora", "-u", "critical", "Fedora", msg])
+        _play(clean(msg))
+        sys.exit(0)
     assert clean("**Olá** [dry] veja [aqui](http://x.y) 🙂 ok") == "Olá veja aqui ok", clean("**Olá** [dry] veja [aqui](http://x.y) 🙂 ok")
     print("clean ok; voz pronta:", ready())

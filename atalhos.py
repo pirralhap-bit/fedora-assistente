@@ -1,5 +1,6 @@
 """Fast path: Ollama picks a shortcut from atalhos.md, code does it. Anything unsure goes to Claude (returns None)."""
 import configparser
+import difflib
 import glob
 import json
 import os
@@ -8,6 +9,7 @@ import re
 import subprocess
 import time
 import unicodedata
+import urllib.parse
 import urllib.request
 
 import modelo
@@ -29,12 +31,12 @@ def _detach(cmd):
 
 
 # ── handlers: return the spoken reply, or None to hand the request to Claude ──
-def hora(_):
+def hora(_, msg=""):
     t = time.localtime()
     return f"São {t.tm_hour} e {t.tm_min:02d}." if t.tm_min else f"São {t.tm_hour} horas em ponto."
 
 
-def data(_):
+def data(_, msg=""):
     t = time.localtime()
     return f"Hoje é {_DIAS[t.tm_wday]}, {t.tm_mday} de {_MESES[t.tm_mon - 1]} de {t.tm_year}."
 
@@ -57,7 +59,7 @@ def _pasta(arg):
     return None
 
 
-def abrir_pasta(arg):
+def abrir_pasta(arg, msg=""):
     p = _pasta(arg)
     if not p or not p.is_dir():
         return None
@@ -81,19 +83,25 @@ def _apps():
         yield pathlib.Path(f).stem, names
 
 
-def abrir_app(arg):
+def abrir_app(arg, msg=""):
     a = re.sub(r"^(o |a |um |uma |app |aplicativo |programa )+", "", fold(arg))
     if not a:
         return None
-    exact = [i for i, names in _apps() if a in names]
-    loose = exact or [i for i, names in _apps() if any(n.startswith(a) or a in n.split() for n in names)]
+    apps = list(_apps())
+    squash = a.replace(" ", "")
+    exact = [i for i, names in apps if a in names or squash in {n.replace(" ", "") for n in names}]
+    loose = exact or [i for i, names in apps if any(n.startswith(a) or a in n.split() for n in names)]
+    if not loose:   # whisper spelled an English name the Portuguese way
+        by_name = {n.replace(" ", ""): i for i, names in apps for n in names}
+        close = difflib.get_close_matches(squash, list(by_name), n=1, cutoff=0.75)
+        loose = [by_name[close[0]]] if close else []
     if not loose:
         return None
     _detach(["gtk-launch", loose[0]])
     return f"Abrindo {arg.strip()}."
 
 
-def volume(arg):
+def volume(arg, msg=""):
     a = fold(arg)
     sink = "@DEFAULT_AUDIO_SINK@"
     if re.search(r"\bmud|mute|silenc", a):
@@ -112,7 +120,7 @@ def volume(arg):
     return "Pronto."
 
 
-def sistema(_):
+def sistema(_, msg=""):
     s = sysinfo.snapshot()
     g = s.get("gpu") or {}
     br = lambda x: f"{x:.1f}".replace(".", ",")   # noqa: E731  (Piper reads "7.1" as "sete ponto um")
@@ -122,17 +130,168 @@ def sistema(_):
     return out
 
 
-def descarregar_modelo(_):
+def descarregar_modelo(_, msg=""):
     subprocess.run(["ollama", "stop", modelo.MODEL], capture_output=True, timeout=20)
     return "Modelo descarregado. A placa de vídeo está livre."
 
 
-def desligar_ollama(_):
+def desligar_ollama(_, msg=""):
     subprocess.Popen(["systemctl", "--user", "stop", "ollama"])   # don't wait: this very request came through Ollama
     return "Desligando o Ollama. Ele volta quando você abrir a Fedora de novo."
 
 
-HANDLERS = {f.__name__: f for f in (hora, data, abrir_pasta, abrir_app, volume, sistema, descarregar_modelo, desligar_ollama)}
+def _section(title):
+    """`- nome: valor` lines under a '## title' heading of atalhos.md."""
+    txt = CATALOG.read_text(encoding="utf-8")
+    m = re.search(rf"^## {title}.*?$(.*?)(?=^## |\Z)", txt, flags=re.M | re.S)
+    return dict((fold(k), v.strip()) for k, v in re.findall(r"^- ([^:\n]+):\s*(\S+)", m.group(1) if m else "", flags=re.M))
+
+
+def _browser(url):
+    _detach(["google-chrome-stable", url])
+
+
+def abrir_site(arg, msg=""):
+    sites = _section("Sites")
+    a = re.sub(r"^(o |a |site (do |da )?)+|\.com.*$|\s", "", fold(arg))
+    key = a if a in sites else next(iter(difflib.get_close_matches(a, list(sites), n=1, cutoff=0.75)), None)
+    if not key:
+        return None
+    _browser(sites[key])
+    return f"Abrindo o {key}."
+
+
+def pesquisar_web(arg, msg=""):
+    q = re.sub(r"^(no google|na internet|na web)\s+|\s+(no google|na internet|na web)$", "", arg.strip(), flags=re.I)
+    if not q:
+        return None
+    _browser("https://www.google.com/search?q=" + urllib.parse.quote_plus(q))
+    return f"Pesquisando {q}."
+
+
+_DISPLAYS = "/org/kde/ScreenBrightness"
+
+
+def _gdbus(path, method, *args, dest="org.kde.ScreenBrightness"):
+    return subprocess.run(["gdbus", "call", "--session", "--dest", dest, "--object-path", path, "--method", method, *args],
+                          capture_output=True, text=True, timeout=5).stdout
+
+
+def brilho(arg, msg=""):
+    a = fold(arg)
+    n = re.search(r"\d+", a)
+    step = 10 if re.search(r"mais|aument|sobe|clar", a) else -10 if re.search(r"menos|abaix|diminu|baix|escur", a) else None
+    if not n and step is None:
+        return None
+    names = re.findall(r"'(display\d+)'", _gdbus(_DISPLAYS, "org.freedesktop.DBus.Properties.Get",
+                                                    "org.kde.ScreenBrightness", "DisplaysDBusNames"))
+    for d in names:
+        path = f"{_DISPLAYS}/{d}"
+        mx = int(re.search(r"\d+", _gdbus(path, "org.freedesktop.DBus.Properties.Get", "org.kde.ScreenBrightness.Display", "MaxBrightness")).group())
+        if n:
+            pct = min(100, int(n.group()))
+        else:
+            cur = int(re.search(r"\d+", _gdbus(path, "org.freedesktop.DBus.Properties.Get", "org.kde.ScreenBrightness.Display", "Brightness")).group())
+            pct = max(0, min(100, round(cur * 100 / mx) + step))
+        _gdbus(path, "org.kde.ScreenBrightness.Display.SetBrightness", str(round(pct * mx / 100)), "0")
+    return f"Brilho em {pct} por cento." if names else None
+
+
+def _players():
+    out = _gdbus("/org/freedesktop/DBus", "org.freedesktop.DBus.ListNames", dest="org.freedesktop.DBus")
+    names = re.findall(r"'(org\.mpris\.MediaPlayer2\.[^']+)'", out)
+    def playing(n):
+        st = _gdbus("/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties.Get", "org.mpris.MediaPlayer2.Player",
+                    "PlaybackStatus", dest=n)
+        return "Playing" in st
+    return sorted(names, key=lambda n: (not playing(n), "plasma-browser-integration" in n))   # the one playing first
+
+
+def midia(arg, msg=""):
+    a = fold(arg + " " + msg)
+    action = ("Next" if re.search(r"proxim|pula|avanca|next", a) else "Previous" if re.search(r"anterior|volta", a)
+              else "Pause" if re.search(r"paus|para\b|parar", a) else "Play" if re.search(r"toca|play|continu|despaus|retom", a)
+              else None)
+    players = _players()
+    if not action or not players:
+        return None
+    _gdbus("/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player." + action, dest=players[0])
+    return {"Next": "Próxima.", "Previous": "Voltando.", "Pause": "Pausado.", "Play": "Tocando."}[action]
+
+
+def print_(arg, msg=""):
+    a = fold(arg + " " + msg)
+    mode = "-a" if "janela" in a else "-r" if re.search(r"area|regiao|pedaco|parte", a) else "-f"
+    pasta = pathlib.Path(subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True).stdout.strip() or HOME) / "Capturas"
+    pasta.mkdir(parents=True, exist_ok=True)
+    out = pasta / time.strftime("print-%Y%m%d-%H%M%S.png")
+    _detach(["spectacle", "-b", "-n", mode, "-o", str(out)])
+    return "Selecione a área." if mode == "-r" else "Print salvo em Imagens, Capturas."
+
+
+_NUM = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5, "seis": 6, "sete": 7, "oito": 8,
+        "nove": 9, "dez": 10, "quinze": 15, "vinte": 20, "trinta": 30, "quarenta": 40, "cinquenta": 50}
+
+
+def duracao(text):
+    """Seconds in "20 minutos", "1 hora e meia", "meia hora", "uma hora e 15 minutos", "90 segundos"; None if absent."""
+    t = fold(text)
+    total, found = 0, False
+    for num, unit in re.findall(r"(\d+|" + "|".join(_NUM) + r"|meia)\s*(hora|h\b|minuto|min\b|segundo|seg\b)", t):
+        n = 0.5 if num == "meia" else int(num) if num.isdigit() else _NUM[num]
+        total += n * (3600 if unit.startswith("h") else 60 if unit.startswith("min") else 1)
+        found = True
+    if re.search(r"hora[s]? e meia", t):
+        total += 1800
+    return int(total) if found and total > 0 else None
+
+
+def timer(arg, msg=""):
+    secs = duracao(arg) or duracao(msg)
+    if not secs or secs > 24 * 3600:
+        return None
+    m = re.search(r"\b(pra|para|de)\s+(?!\d)(.+)$", fold(msg))
+    motivo = m.group(2) if m and not duracao(m.group(2)) else ""
+    aviso = f"Hora de {motivo}." if motivo else "Seu timer terminou."
+    # systemd keeps it even if Fedora restarts; argv only (never a shell): the text came from the microphone
+    r = subprocess.run(["systemd-run", "--user", "--collect", f"--on-active={secs}", "--timer-property=AccuracySec=1s",
+                        "--unit", f"fedora-timer-{int(time.time())}", "/usr/bin/python3",
+                        str(pathlib.Path(__file__).with_name("speech.py")), "--aviso", aviso], capture_output=True, timeout=10)
+    if r.returncode:
+        return None
+    h, mnt = divmod(secs // 60, 60)
+    quando = " e ".join(x for x in (f"{h} hora{'s' * (h > 1)}" if h else "", f"{mnt} minuto{'s' * (mnt > 1)}" if mnt else "") if x) or f"{secs} segundos"
+    return f"Timer de {quando}" + (f" pra {motivo}." if motivo else ".")
+
+
+_CERQUILHO = ("Cerquilho", -23.165, -47.743)
+
+
+def _get(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "fedora-assistente"}), timeout=6) as r:
+        return json.load(r)
+
+
+def clima(arg, msg=""):
+    cidade = re.sub(r"^(em |no |na |de )|\b(hoje|amanha|agora)\b", "", fold(arg)).strip()
+    nome, lat, lon = _CERQUILHO
+    if cidade and cidade != "cerquilho":
+        g = (_get("https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name=" + urllib.parse.quote(cidade))
+             .get("results") or [None])[0]
+        if not g:
+            return None
+        nome, lat, lon = g["name"], g["latitude"], g["longitude"]
+    d = _get(f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&timezone=auto&forecast_days=2"
+             "&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max")
+    i = 1 if "amanha" in fold(arg + " " + msg) else 0
+    dd = d["daily"]
+    out = (f"{'Amanhã' if i else 'Hoje'} em {nome}: máxima de {round(dd['temperature_2m_max'][i])}, mínima de "
+           f"{round(dd['temperature_2m_min'][i])} graus, {dd['precipitation_probability_max'][i]} por cento de chance de chuva.")
+    return out + (f" Agora faz {round(d['current']['temperature_2m'])} graus." if not i else "")
+
+
+HANDLERS = {f.__name__.rstrip("_"): f for f in (hora, data, abrir_pasta, abrir_app, abrir_site, pesquisar_web, volume, brilho,
+                                                 midia, print_, timer, clima, sistema, descarregar_modelo, desligar_ollama)}
 
 
 # ── routing ──
@@ -157,15 +316,32 @@ def classify(message):
     return name, (arg if isinstance(arg, str) else "")
 
 
+# the model picks, the code double-checks: a pick whose verb isn't in the sentence goes to Claude
+_ABRIR = r"\b(abr|entr|inici|execut|rod|lig|bot|coloc|mostr)"
+GUARD = {"abrir_app": _ABRIR, "abrir_site": _ABRIR, "abrir_pasta": _ABRIR,
+         "pesquisar_web": r"\b(pesquis|procur|busc|googl)"}
+_NUNCA = r"\b(fech|encerr|mat[ae]|sai[rd]|apag|delet|remov|exclu|deslig)"
+
+
+def _confere(name, message):
+    m = fold(message)
+    if name in GUARD and (not re.search(GUARD[name], m) or re.search(_NUNCA, m)):
+        return False
+    return True
+
+
 def route(message):
     """Spoken reply if a shortcut handled the request, else None (Claude takes it)."""
     picked = classify(message)
-    if not picked or picked[0] not in HANDLERS:
+    if not picked or picked[0] not in HANDLERS or not _confere(picked[0], message):
         return None
     name, arg = picked
     try:
-        reply = HANDLERS[name](arg)
-    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+        reply = HANDLERS[name](arg, message)
+        if reply is None and name in ("abrir_app", "abrir_site"):   # "abre o whatsapp": no app installed, but a site
+            name = "abrir_site" if name == "abrir_app" else "abrir_app"
+            reply = HANDLERS[name](arg, message)
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, AttributeError, TypeError):
         return None
     if reply:
         print(f"[atalho] {message!r} -> {name}({arg!r})", flush=True)
@@ -179,14 +355,24 @@ if __name__ == "__main__":
     assert _pasta("pasta projetos") == HOME / "Projetos", _pasta("pasta projetos")
     assert _pasta("xyz inexistente") is None
     assert any("chrome" in n for i, names in _apps() for n in names)
+    assert duracao("20 minutos") == 1200 and duracao("1 hora e meia") == 5400 and duracao("meia hora") == 1800
+    assert duracao("uma hora e 15 minutos") == 4500 and duracao("tirar a peça") is None
+    assert "youtube" in _section("Sites") and _section("Sites")["trailhead"].startswith("https://")
     # routing with the real model: every phrase must land on the right shortcut (handlers not run)
     cases = [("que horas são", "hora"), ("me diz as horas", "hora"), ("que dia é hoje?", "data"),
              ("abre meus downloads", "abrir_pasta"), ("abre o chrome pra mim", "abrir_app"), ("aumenta o volume", "volume"),
              ("volume 30", "volume"), ("como está o sistema", "sistema"), ("descarrega o modelo", "descarregar_modelo"),
-             ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "nenhum"),
+             ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "clima"), ("vai chover hoje?", "clima"),
+             ("abre o youtube", "abrir_site"), ("pesquisa preço do PLA", "pesquisar_web"), ("tira um print", "print"),
+             ("brilho 50", "brilho"), ("pausa a música", "midia"), ("pula essa", "midia"), ("timer de 20 minutos", "timer"),
+             ("me avisa em 1 hora pra tirar a peça da impressora", "timer"), ("quanto custa o PLA hoje?", "nenhum"),
+             ("desliga o computador", "nenhum"),
              ("apaga o arquivo teste.txt", "nenhum"), ("fecha o chrome", "nenhum"), ("cria um arquivo lista.txt", "nenhum")]
     if modelo.MODEL in (sysinfo.ollama() or []):
-        bad = [(m, want, classify(m)) for m, want in cases if (classify(m) or ("?",))[0] != want]
+        def pick(m):
+            c = classify(m)
+            return c[0] if c and c[0] in HANDLERS and _confere(c[0], m) else "nenhum"
+        bad = [(m, want, classify(m)) for m, want in cases if pick(m) != want]
         assert not bad, bad
         print(f"roteamento ok ({len(cases)} frases)")
     else:

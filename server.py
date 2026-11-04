@@ -186,7 +186,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if not speech.ready():
                 return self._json({"error": "Piper não encontrado (PIPER_BIN / PIPER_VOICE)"}, 503)
-            return self._json({"ok": speech.say(text)})
+            # a question keeps the mic open (8 s, no "Ok, Fedora") once the voice has finished, so it doesn't hear itself
+            then = (lambda: listener.EAR.control("listen")) if text.rstrip().endswith("?") else None
+            return self._json({"ok": speech.say(text, then)})
 
         if p == "/api/listen":
             try:
