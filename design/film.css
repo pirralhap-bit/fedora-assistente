@@ -80,3 +80,8 @@ body.dictating .dictpane textarea{background:#0c1417;color:#dfe6e3;border-color:
 body.dictating .dictpane #out{font:15px/1.7 "Share Tech Mono",ui-monospace,monospace;color:#cfd8d4}
 body.dictating .dictpane textarea:focus-visible{border-color:rgba(94,230,255,.5);box-shadow:none}
 body.dictating .dictpane .field label{color:#9fb1b4}
+.voice{border-bottom-color:var(--line)}
+.vtext b{font-family:var(--mono);font-weight:400;text-transform:uppercase;letter-spacing:.14em;color:var(--accent)}
+.vdot{box-shadow:0 0 10px currentColor}
+.voice[data-state="wake"],.voice[data-state="dict"]{background:rgba(255,122,92,.08)}
+.voice[data-state="wake"] .vtext b,.voice[data-state="dict"] .vtext b{color:var(--closed);text-shadow:0 0 10px var(--closed)}

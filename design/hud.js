@@ -213,8 +213,8 @@ function askWeb(q){
   card.append(src);const b=el('button','ghost','Salvar resumo no Inbox');b.type='button';
   b.onclick=()=>sys('O resumo iria para 00-INB 📥 Inbox/_a-processar com as fontes. No protótipo nada é gravado.');
   card.append(b);m.append(card);push(m)}
-function ask(q){
-  const you=el('div','msg you');you.append(el('p',null,q));push(you);
+function ask(q,voice){
+  const you=el('div','msg you');if(voice)you.append(el('span','vtag','por voz'));you.append(el('p',null,q));push(you);
   if(web){askWeb(q);return}
   const hits=search(q),m=el('div','msg jar');m.append(el('span','who','Jarvis'));
   if(!hits.length){clearFocus();m.append(el('p',null,'Não achei nota sobre isso no vault. Com o Claude ligado, eu responderia mesmo assim, sem citar nota.'));push(m);return}
@@ -236,16 +236,60 @@ const DEST=[
 DEST.forEach(([v,l])=>{const o=el('option',null,l);o.value=v;$('dest').append(o)});
 const SAMPLE='então hoje eu fechei o protótipo do jarvis no estilo filme e o painel limpo também ficou salvo no projeto o que eu achei é que o grafo precisava parecer mais vivo tipo as pastas orbitando em volta de um núcleo e quando eu for ditar o grafo tem que sair da frente pra eu ter espaço pra escrever ah e amanhã eu preciso testar o ollama na rx 580 ver se o vulkan funciona e qual modelo cabe nos oito giga de vram acho que um de sete ou oito bilhões de parâmetros e também lembrar de comprar filamento petg preto pro gabinete da impressora e responder o cliente da vitrine sobre o cupom vitrine cinco';
 const SAMPLE_OUT=['#### Jarvis','- Protótipo do HUD fechado nos dois estilos: filme e painel limpo, ambos salvos no projeto.','- O grafo precisa parecer mais vivo: pastas orbitando em volta de um núcleo.','- Ao ditar, o grafo sai da frente e o texto ganha o centro da tela.','','#### Próximos passos','- Testar o Ollama na RX 580 com Vulkan e ver qual modelo cabe nos 8 GB de VRAM (provável: 7 a 8 bilhões de parâmetros). #to-do','- Comprar filamento PETG preto para o gabinete da impressora. #to-do','- Responder o cliente da vitrine sobre o cupom VITRINE5. #to-do'];
-let recTimer=null,recStart=0;
-function stopRec(){clearInterval(recTimer);recTimer=null;$('rec').setAttribute('aria-pressed','false');$('rec').classList.remove('on');$('rec-l').textContent='Ditar'}
-$('rec').onclick=()=>{
-  if(recTimer){stopRec();return}
+let recTimer=null,recStart=0,recDone=null;
+function stopRec(){clearInterval(recTimer);recTimer=null;$('rec').setAttribute('aria-pressed','false');$('rec').classList.remove('on');$('rec-l').textContent='Ditar';
+  const d=recDone;recDone=null;d&&d()}
+$('rec').onclick=()=>{if(recTimer){recDone=null;stopRec()}else startRec()};
+function startRec(done){
+  recDone=done||null;
   $('rec').setAttribute('aria-pressed','true');$('rec').classList.add('on');$('rec-l').textContent='Parar';recStart=Date.now();
-  $('dhint').textContent='Simulação: no navegador o microfone fica desligado, então escrevo uma fala de exemplo.';
+  $('dhint').textContent=done?'Gravando. Diga "Jarvis, pronto" ou fique 3 segundos em silêncio para terminar.':'Simulação: no navegador o microfone fica desligado, então escrevo uma fala de exemplo.';
   const words=SAMPLE.split(' ');let k=0;$('raw').value='';
   recTimer=setInterval(()=>{$('raw').value+=(k?' ':'')+words[k++];$('raw').scrollTop=$('raw').scrollHeight;
     const s=Math.round((Date.now()-recStart)/1000);$('rect').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-    if(k>=words.length)stopRec()},reduce.matches?0:90)};
+    if(k>=words.length)stopRec()},reduce.matches?0:90)}
+
+// ---- always-listening voice: openWakeWord waits for "Jarvis" locally, then whisper.cpp records until silence
+const VSTATE={
+  idle:['Aguardando “Jarvis”','Microfone aberto. Nada é gravado nem sai do PC até ouvir a palavra.'],
+  wake:['Pode falar','Ouvi “Jarvis”. Gravando até você parar de falar.'],
+  hear:['Transcrevendo…','whisper.cpp convertendo a fala em texto.'],
+  dict:['Gravando o ditado','Diga “Jarvis, pronto” ou fique 3 segundos em silêncio.'],
+  done:['Ouvi “pronto”','Ditado encerrado. Ollama organizando o texto.'],
+  mute:['Microfone desligado','Ligue para voltar a responder ao “Jarvis”.'],
+};
+let vstate='idle';
+function setV(s){vstate=s;$('voice').dataset.state=s;$('v-state').textContent=VSTATE[s][0];$('v-sub').textContent=VSTATE[s][1]}
+const SIM=[
+  ['Jarvis, o que mudou no Fatia-Ai?','ask'],
+  ['Jarvis, anotar na daily','dict'],
+  ['Jarvis, pesquisa na web filamento para peças que ficam no sol','web'],
+  ['Jarvis, abre a nota do Auto-Trade','ask'],
+];
+let simK=0;const wait=ms=>new Promise(r=>setTimeout(r,reduce.matches?Math.min(ms,150):ms));
+function voiceMsg(q){const you=el('div','msg you');you.append(el('span','vtag','por voz'),el('p',null,q.replace(/^Jarvis,\s*/,'')));push(you)}
+async function simulateVoice(){
+  if(vstate!=='idle')return;
+  const[q,kind]=SIM[simK++%SIM.length];
+  setV('wake');await wait(1400);setV('hear');await wait(900);
+  const said=q.replace(/^Jarvis,\s*/,'');
+  if(kind==='dict'){voiceMsg(q);sys('Abrindo o ditado na daily de hoje.');$('dest').value='daily';showMode(true);setV('dict');
+    startRec(async()=>{setV('done');await wait(700);$('tidy').click();await wait(2400);setV('idle');
+      sys('Ditado organizado. Revise e diga “Jarvis, salvar” ou toque em Salvar na nota.')});return}
+  if(kind==='web'){showMode(false);setScope(true);voiceMsg(q);askWeb(said.replace(/^pesquisa na web\s*/i,''));setScope(false);setV('idle');return}
+  showMode(false);ask(said,true);setV('idle')}
+$('v-sim').onclick=simulateVoice;
+$('v-mute').onclick=()=>{const off=vstate!=='mute';if(off&&vstate!=='idle')return;setV(off?'mute':'idle');
+  $('v-mute').setAttribute('aria-pressed',off);$('v-mute').setAttribute('aria-label',off?'Ligar microfone':'Desligar microfone')};
+const vw=$('v-wave'),vx=vw.getContext('2d');let vph=0;
+function wave(){const w=vw.clientWidth,h=vw.clientHeight,d=devicePixelRatio||1;
+  if(w){if(vw.width!==w*d){vw.width=w*d;vw.height=h*d}vx.setTransform(d,0,0,d,0,0);vx.clearRect(0,0,w,h);
+    const amp={idle:.12,wake:.9,hear:.35,dict:.8,done:.3,mute:0}[vstate];vph+=reduce.matches?0:.18;
+    vx.strokeStyle=css('--accent');vx.lineWidth=1.5;vx.beginPath();
+    for(let x=0;x<=w;x+=2){const t=x/w,y=h/2+Math.sin(t*14+vph)*Math.sin(t*Math.PI)*amp*(h/2-2)*(.6+.4*Math.sin(vph*.7+t*5));x?vx.lineTo(x,y):vx.moveTo(x,y)}
+    vx.stroke()}
+  requestAnimationFrame(wave)}
+setV('idle');requestAnimationFrame(wave);
 function tidy(raw){
   if(norm(raw)===norm(SAMPLE))return SAMPLE_OUT;
   // shortcut: sentence split stands in for the Ollama prompt; the real app sends raw text to the local model

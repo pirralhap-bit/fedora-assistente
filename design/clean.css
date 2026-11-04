@@ -148,3 +148,20 @@ textarea{resize:none;min-height:240px;height:100%;font-size:15px;line-height:1.6
 .scope button{border:1px solid var(--line);background:none;border-radius:99px;padding:3px 11px;font-size:12px;color:var(--dim)}
 .scope button:hover{color:var(--fg)}
 .scope button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* always-listening voice strip */
+.voice{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"dot text" "wave wave" "btns btns";gap:8px 10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.vdot{grid-area:dot;width:10px;height:10px;border-radius:50%;background:var(--open)}
+.vtext{grid-area:text;display:grid;min-width:0}
+.vtext b{font-weight:600;font-size:14px}
+.vtext span{font-size:12px;color:var(--dim)}
+#v-wave{grid-area:wave;width:100%;height:28px;display:block}
+.vbtns{grid-area:btns;display:flex;gap:6px}
+.vbtns .ghost{flex:1;padding:6px 10px;font-size:12px}
+#v-mute[aria-pressed="true"]{color:var(--closed);border-color:var(--closed)}
+.voice[data-state="wake"] .vdot,.voice[data-state="dict"] .vdot{background:var(--closed);animation:pulse 1s ease-in-out infinite}
+.voice[data-state="hear"] .vdot,.voice[data-state="done"] .vdot{background:var(--hot)}
+.voice[data-state="mute"] .vdot{background:var(--dim)}
+.voice[data-state="wake"],.voice[data-state="dict"]{background:var(--accent-soft)}
+.vtag{font:10px var(--mono);opacity:.75;text-transform:uppercase;letter-spacing:.08em}
+@media (prefers-reduced-motion:reduce){.voice .vdot{animation:none!important}}
