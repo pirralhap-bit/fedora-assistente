@@ -27,7 +27,7 @@ Texto ditado:
 
 
 def tidy(text):
-    body = json.dumps(dict(model=MODEL, prompt=PROMPT + text, stream=False,
+    body = json.dumps(dict(model=MODEL, prompt=PROMPT + text, stream=False, think=False,  # qwen3 would "think" for seconds first
                            options=dict(temperature=0.2))).encode()
     req = urllib.request.Request(sysinfo.OLLAMA_URL + "/api/generate", body,
                                  {"Content-Type": "application/json"})
