@@ -44,6 +44,11 @@ def stop():
             p.kill()
 
 
+def speaking():
+    with _lock:
+        return any(p.poll() is None for p in _procs)
+
+
 def _play(text, then=None):
     tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)

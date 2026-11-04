@@ -176,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/ear":
             action = str(json.loads(raw or b"{}").get("action", ""))
-            if action not in {"on", "off", "listen", "dictate", "stop"}:
+            if action not in {"on", "off", "listen", "dictate", "stop", "focus", "blur"}:
                 return self._json({"error": "ação desconhecida"}, 400)
             return self._json({"state": listener.EAR.control(action)})
 

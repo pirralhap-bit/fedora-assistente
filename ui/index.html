@@ -34,8 +34,12 @@ button{cursor:pointer;touch-action:manipulation}
 .orbit .s{font:300 11px var(--data);color:var(--faint)}
 .orbit.left{text-align:right}
 .orbit .v.hot{color:var(--warn)}
-.orbit .bar{height:1px;width:132px;margin-top:5px;background:linear-gradient(90deg,var(--hot) var(--p),var(--faint) var(--p))}
-.orbit .v.hot+.s+.bar{background:linear-gradient(90deg,var(--warn) var(--p),var(--faint) var(--p))}
+.orbit .bar{position:absolute;left:-12px;top:3px;bottom:3px;width:2px;background:linear-gradient(0deg,var(--hot) var(--p),var(--faint) var(--p))}
+.orbit.foot{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px))}
+.orbit.fl{left:28px}
+.orbit.fr{left:auto;right:28px;text-align:right}
+.orbit.fr .bar{left:auto;right:-12px}
+.orbit .v.hot+.s+.bar{background:linear-gradient(0deg,var(--warn) var(--p),var(--faint) var(--p))}
 .voice{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   width:min(640px,calc(100% - 32px));display:grid;gap:10px;justify-items:center;text-align:center}
 .state{font:400 11px var(--data);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;gap:10px;align-items:center}
@@ -211,9 +215,6 @@ let S={},V={};
 const num=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
 const rel=new Intl.RelativeTimeFormat('pt-BR',{numeric:'auto'});
 const ago=ts=>{const h=Math.round((ts*1000-Date.now())/36e5);return Math.abs(h)<24?rel.format(h,'hour'):rel.format(Math.round(h/24),'day')};
-function pregao(){const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'short',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
-  // shortcut: ignores B3 holidays; use the b3-* calendar when it matters
-  const m=+p.hour*60+ +p.minute;return!['Sat','Sun'].includes(p.weekday)&&m>=600&&m<1020}
 const dash='—';
 // plan usage comes from Claude's own rate_limit_event, so it only refreshes after a question
 const use=w=>{const u=S.claude&&S.claude[w];return u&&u.used!=null?u.used:null};
@@ -225,12 +226,12 @@ const ITEMS=[
   ['left',180,'ram',()=>S.ram==null?dash:`${num.format(S.ram)} / ${num.format(S.ram_total)} GB`,()=>'memória em uso'],
   ['left',162,'gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'sem leitura da placa'],
   ['left',144,'ollama',()=>S.ollama==null?'desligado':S.ollama.length?'carregado':'parado',()=>S.ollama&&S.ollama.length?S.ollama.join(', '):'nenhum modelo na memória'],
-  ['right',-45,'b3',()=>pregao()?'pregão aberto':'pregão fechado',()=>pregao()?'fecha às 17h':'abre às 10h'],
-  ['right',-27,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
-  ['right',-9,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
-  ['right',9,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
-  ['right',27,'claude · 5h',()=>pct('five_hour'),()=>renova('five_hour',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('five_hour')],
-  ['right',45,'claude · semana',()=>pct('seven_day'),()=>renova('seven_day',{weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('seven_day')],
+  ['right',-30,'tokens',()=>{const l=S.claude&&S.claude.last;return l?num.format(l.total)+' tokens':dash},()=>{const l=S.claude&&S.claude.last;return l?'última pergunta · '+num.format(l.out)+' de resposta':'aparece depois da 1ª pergunta'}],
+  ['right',-12,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
+  ['right',6,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
+  ['right',24,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
+  ['foot fl',0,'claude · 5h',()=>pct('five_hour'),()=>renova('five_hour',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('five_hour')],
+  ['foot fr',0,'claude · semana',()=>pct('seven_day'),()=>renova('seven_day',{weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('seven_day')],
 ];
 const orbitEls=ITEMS.map(([side,,,,,bar])=>{const e=el('div','orbit '+side);e.append(el('div','k'),el('div','v'),el('div','s'));if(bar)e.append(el('div','bar'));$('orbits').append(e);return e});
 ITEMS.forEach(([, ,k],i)=>orbitEls[i].querySelector('.k').textContent=k);
@@ -238,10 +239,10 @@ function fillOrbit(){ITEMS.forEach(([, , ,v,s,bar],i)=>{const e=orbitEls[i];e.qu
   const b=bar&&bar();if(bar)e.style.setProperty('--p',((b||0)*100).toFixed(1)+'%');
   e.querySelector('.v').classList.toggle('hot',i===1&&S.cpu>80||i===3&&S.gpu&&S.gpu.busy>80||b>.8)})}
 function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
-  if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{const e=orbitEls[i],k=col[side]++;
+  if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{if(side.startsWith('foot'))return;const e=orbitEls[i],k=col[side]++;
       e.style.transform=`translate(${side==='left'?16:W/2+8}px,${hole.Y+hole.R*2.2+k*46}px)`;e.style.opacity=1});return}
   const rx=Math.min(W*.37,hole.R*5.6),ry=Math.min(H*.33,hole.R*3.4);
-  ITEMS.forEach(([side,deg],i)=>{const e=orbitEls[i];
+  ITEMS.forEach(([side,deg],i)=>{if(side.startsWith('foot'))return;const e=orbitEls[i];
     const a=(deg+(reduce.matches?0:Math.sin(t*.06+i*1.7)*2.2))*Math.PI/180;
     let x=hole.X+Math.cos(a)*rx,y=hole.Y+Math.sin(a)*ry;const w=e.offsetWidth,h=e.offsetHeight;
     x=side==='left'?x-w:x;x=Math.max(16,Math.min(W-16-w,x));
@@ -250,6 +251,9 @@ async function refreshSystem(){try{S=await api('/api/system')}catch{}fillOrbit()
 async function refreshVault(){try{V=await api('/api/vault')}catch{}fillOrbit()}
 refreshSystem();refreshVault();setInterval(refreshSystem,2000);setInterval(refreshVault,60000);
 const ear=action=>api('/api/ear',{action}).catch(e=>say(errMsg(e)));
+// tells the ear whether this window is in front; when it is not, "Ok, Fedora" shows the mini orb by the mouse
+const focusEar=()=>api('/api/ear',{action:document.hasFocus()?'focus':'blur'}).catch(()=>{});
+addEventListener('focus',focusEar);addEventListener('blur',focusEar);
 function showStatus(){api('/api/status').then(s=>{
   const brain=s.runtime==='claude'?'Claude conectado':'Claude indisponível';
   const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'diga “Ok, Fedora”';
@@ -266,7 +270,7 @@ function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[
   $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
   const d=s==='dict';$('dictate').setAttribute('aria-pressed',d);$('dictate').textContent=d?'Parar':'Ditar'}
 const say=t=>{$('reply').textContent=t};
-function connect(){const es=new EventSource('/api/events');
+function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
   es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data)}catch{return}
     if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=Math.min(1,.3+ev.v*2.5)}
     else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}

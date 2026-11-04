@@ -51,11 +51,34 @@ def update_state(mutator):
         return result
 
 
+def _tokens_block():
+    """Real token/plan numbers from the last turn, so "quantos tokens você gastou?" is answered, not guessed."""
+    import runtime   # lazy, like /status
+    L = runtime.LIMITS
+    lines = []
+    if L.get("last"):
+        n = lambda v: f"{v:,}".replace(",", ".")   # 56.451, pt-BR
+        lines.append(f"- Pergunta anterior: {n(L['last']['total'])} tokens no total (cache incluído), "
+                     f"{n(L['last']['out'])} escritos na resposta.")
+    for key, name in (("five_hour", "janela de 5 horas"), ("seven_day", "semana")):
+        w = L.get(key) or {}
+        if w.get("used") is not None:
+            resets = time.strftime(" (zera %d/%m %H:%M)", time.localtime(w["resets"])) if w.get("resets") else ""
+            lines.append(f"- Uso do plano na {name}: {round(w['used'] * 100)}%{resets}.")
+    if not lines:
+        return ""
+    return ("## Seus tokens (números reais do servidor; use estes, não estime)\n" + "\n".join(lines)
+            + "\nA pergunta atual ainda não tem contagem: só fica pronta quando você terminar de responder.")
+
+
 def context_block(message=""):
     """Dashboard state + the vault notes relevant to this turn."""
     d = load()
     # saves a tool round trip (date) on "que horas são?" and lets "amanhã"/"sexta" resolve without one
     out = [time.strftime("## Agora\n%A, %d/%m/%Y %H:%M (horário local)")]
+    tok = _tokens_block()
+    if tok:
+        out.append(tok)
     if d["profile"]:
         out.append("## Operator profile\n" + "\n".join(f"- {x}" for x in d["profile"][-40:]))
     if d["goal"]:

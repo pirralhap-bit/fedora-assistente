@@ -32,6 +32,7 @@ DEBUG = os.environ.get("FEDORA_DEBUG") == "1"
 HINT = f"Ok, {NAME}."     # initial prompt: tells whisper the name is a word it should expect
 APP_URL = f"http://localhost:{os.environ.get('JARVIS_PORT', '8720')}/"
 APP_CMD = os.environ.get("FEDORA_APP_CMD", "google-chrome-stable --app={url}")
+ORB_CMD = ["/usr/bin/python3", str(pathlib.Path(__file__).with_name("orb.py"))]   # system python: GTK 4 lives there
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
 # seconds of quiet that end a segment (~1 s pauses mid-sentence are normal) and longest segment, in frames
 SILENCE = {k: int(v * FPS) for k, v in {"wake": 1.2, "command": 1.6, "dictate": 3.0}.items()}
@@ -98,6 +99,11 @@ class Ear:
         self.jobs = queue.Queue()
         self.proc = None
         self.error = None
+        self.focused = False      # the Fedora window is in front: no need for the mini orb
+        self.orb = None
+        self.orb_hold = 0.0
+        self.orb_spoke = False
+        self.orb_lock = threading.Lock()
 
     # ---- events to the page (Server-Sent Events) ----
     def subscribe(self):
@@ -114,6 +120,8 @@ class Ear:
         with self.lock:
             if q in self.subs:
                 self.subs.remove(q)
+            if not self.subs:
+                self.focused = False
 
     def emit(self, ev, keep=False):
         with self.lock:
@@ -125,7 +133,60 @@ class Ear:
                 q.put_nowait(ev)
             except queue.Full:
                 pass
+        if ev.get("t") in ("level", "state", "command"):
+            self._orb_send(ev)
         return bool(subs)
+
+    # ---- mini orb in the corner of the mouse's screen (orb.py) while the window is closed or behind ----
+    def _orb_send(self, ev):
+        with self.orb_lock:
+            p = self.orb
+            if not p:
+                return
+            try:
+                p.stdin.write((json.dumps(ev) + "\n").encode())
+                p.stdin.flush()
+            except (OSError, ValueError):
+                self.orb = None
+
+    def _orb_show(self, hold):
+        with self.orb_lock:
+            self.orb_hold = max(self.orb_hold, time.time() + hold)
+            if self.focused or (self.orb and self.orb.poll() is None):
+                return
+            try:
+                self.orb = subprocess.Popen(ORB_CMD, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.DEVNULL, start_new_session=True)
+                self.orb_spoke = False
+            except OSError:
+                self.orb = None
+                return
+        self._orb_send(dict(t="state", v=self.state() if self.mode != "wake" else "think"))
+
+    def _orb_close(self):
+        self._orb_send(dict(t="bye"))
+        with self.orb_lock:
+            p, self.orb = self.orb, None
+        if p:
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+
+    def _orb_watch(self):
+        """Keep the orb while she listens, thinks or talks; drop it once she has finished (or nothing came)."""
+        while True:
+            time.sleep(0.2)
+            if not self.orb:
+                continue
+            if self.orb.poll() is not None:
+                self.orb = None
+            elif self.mode != "wake":
+                continue
+            elif speech.speaking():
+                self.orb_spoke = True
+            elif self.orb_spoke or time.time() > self.orb_hold:
+                self._orb_close()
 
     def state(self):
         return "mute" if not self.on else {"wake": "idle", "command": "listen", "dictate": "dict", "busy": "think"}[self.mode]
@@ -139,6 +200,11 @@ class Ear:
 
     # ---- control from the page ----
     def control(self, action):
+        if action in ("focus", "blur"):
+            self.focused = action == "focus"
+            if self.focused:
+                self._orb_close()
+            return self.state()
         if action == "off":
             self.on = False
             self._stop_proc()
@@ -172,6 +238,7 @@ class Ear:
     def start(self):
         threading.Thread(target=self._capture, daemon=True, name="ear-capture").start()
         threading.Thread(target=self._work, daemon=True, name="ear-work").start()
+        threading.Thread(target=self._orb_watch, daemon=True, name="ear-orb").start()
 
     def _capture(self):
         while True:
@@ -262,6 +329,7 @@ class Ear:
                 return
             speech.stop()                                        # "Ok, Fedora" interrupts her
             self.emit(dict(t="wake"))
+            self._orb_show(8 if len(rest) < 2 else 30)    # 30 s: Claude can take ~17 s before she speaks
             if len(rest) < 2:                                     # just the name: wait for the command
                 self.mode, self.deadline = "command", time.time() + 8
                 if not self.emit(dict(t="state", v="listen")):
@@ -278,6 +346,7 @@ class Ear:
         if mode == "dictate":
             self.emit(dict(t="dictation", text=text), keep=True)
         else:
+            self._orb_show(30)
             cmd = strip_wake(text)
             self.emit(dict(t="command", text=cmd if cmd is not None else text), keep=True)
         self.emit(dict(t="state", v=self.state()))

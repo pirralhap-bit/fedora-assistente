@@ -297,6 +297,9 @@ def _run_locked(message, session_id=None, system=None):
                 if not text_seen and ev.get("result"):
                     yield dict(t="delta", text=str(ev["result"]))
                     text_seen = True
+                # whole context the turn cost, cache included; the HUD shows it as "última pergunta"
+                LIMITS["last"] = dict(total=sum(usage.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens",
+                                      "cache_creation_input_tokens", "output_tokens")), out=usage.get("output_tokens", 0))
                 yield dict(t="usage",
                            input_tokens=usage.get("input_tokens", 0),
                            output_tokens=usage.get("output_tokens", 0),
