@@ -1,0 +1,73 @@
+/* Estilo filme — same three panes, rebuilt as a holographic HUD: cyan hairlines, bracket corners, rotating rings behind the graph. Single dark theme. */
+:root:not(#_){
+  --bg:#02070b; --pane:rgba(8,24,32,.55); --sunk:rgba(94,230,255,.06); --line:rgba(94,230,255,.22); --fg:#d9f6ff; --dim:#6fa3b3;
+  --accent:#5ee6ff; --accent-soft:rgba(94,230,255,.14); --accent-fg:#021118; --open:#7dffb2; --closed:#ff7a5c; --hot:#ffb347;
+  --edge:rgba(94,230,255,.16); --edge-on:#5ee6ff; --label:#d9f6ff; --node-s:85%; --node-l:66%; --glow:8;
+  --sans:"Rajdhani","Segoe UI",system-ui,sans-serif; --mono:"Share Tech Mono",ui-monospace,Menlo,monospace;
+  --label-font:"Share Tech Mono",ui-monospace,monospace; --r:2px; color-scheme:dark;
+}
+body{font:500 15px/1.4 var(--sans);letter-spacing:.02em;
+  background:radial-gradient(ellipse 80% 60% at 50% 45%,#08202b 0%,var(--bg) 70%) fixed,var(--bg)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:repeating-linear-gradient(0deg,rgba(94,230,255,.035) 0 1px,transparent 1px 3px)}
+h1{font-size:18px;letter-spacing:.32em;text-transform:uppercase;color:var(--accent);text-shadow:0 0 12px var(--accent)}
+h2{font-family:var(--mono);font-weight:400;letter-spacing:.2em;color:var(--accent)}
+h2::before{content:"▸"}
+.note{border:1px solid var(--line);background:none;color:var(--dim)}
+
+.pane{position:relative;backdrop-filter:blur(3px);border-color:var(--line);
+  box-shadow:inset 0 0 30px rgba(94,230,255,.05),0 0 0 1px rgba(0,0,0,.4)}
+.pane::before,.pane::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--accent);pointer-events:none;filter:drop-shadow(0 0 4px var(--accent))}
+.pane::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+.pane::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+
+.dot{border-radius:0;transform:rotate(45deg);box-shadow:0 0 10px var(--accent)}
+.clock{font:300 46px/1 var(--mono);letter-spacing:.04em;color:var(--accent);text-shadow:0 0 18px rgba(94,230,255,.7)}
+.date{font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;font-size:12px}
+.status{border-radius:0;background:none;border:1px solid currentColor;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;font-size:11px}
+.status::before{box-shadow:0 0 6px currentColor}
+.mv{color:var(--accent)} .meter.hot .mv{color:var(--hot);text-shadow:0 0 8px var(--hot)}
+.mn{font-family:var(--mono);letter-spacing:.14em}
+.ollama{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.ollama.on::before{box-shadow:0 0 8px var(--hot)}
+.item{border-radius:0;border-left:2px solid transparent}
+.item:hover{background:var(--accent-soft);border-left-color:var(--accent)}
+.sw{border-radius:50%;box-shadow:0 0 6px currentColor}
+.chip{border-radius:0;border:1px dashed var(--line);background:none;font-family:var(--mono)}
+
+.stage{background:transparent}
+.rings{display:grid;place-items:center;position:absolute;inset:0;pointer-events:none}
+.rings i{grid-area:1/1;border-radius:50%;border:1px solid var(--line)}
+.rings i:nth-child(1){width:min(78%,78vh);aspect-ratio:1;border-style:dashed;animation:spin 90s linear infinite}
+.rings i:nth-child(2){width:min(62%,62vh);aspect-ratio:1;border-width:2px;border-color:transparent var(--line) transparent var(--line);animation:spin 40s linear infinite reverse}
+.rings i:nth-child(3){width:min(94%,94vh);aspect-ratio:1;border-color:rgba(94,230,255,.08)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gtitle b{font-family:var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
+.gtitle span,.legend{font-family:var(--mono);font-size:11px;letter-spacing:.06em}
+.legend i{border-radius:50%}
+.ib{border-radius:0;background:rgba(2,7,11,.7);color:var(--accent);border-color:var(--line)}
+.ib:hover{background:var(--accent-soft);border-color:var(--accent);box-shadow:0 0 10px rgba(94,230,255,.4)}
+
+.chat header small{text-transform:uppercase;letter-spacing:.12em}
+.tabs{border-radius:0;background:none;border:1px solid var(--line);padding:2px}
+.tabs button{border-radius:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.14em;font-size:12px}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-fg);box-shadow:0 0 12px rgba(94,230,255,.5)}
+.msg.you{border-radius:0;background:var(--accent-soft);color:var(--fg);border:1px solid var(--accent);box-shadow:0 0 12px rgba(94,230,255,.15)}
+.msg.jar{border-left:2px solid var(--accent);padding-left:10px}
+.msg.jar .who{font-family:var(--mono);letter-spacing:.24em;text-transform:uppercase;text-shadow:0 0 8px var(--accent)}
+.msg.sys{font-family:var(--mono);font-size:12px}
+.msg.sys::before{content:"// "}
+.ref,.sg{border-radius:0;font-family:var(--mono);background:none}
+.ref:hover,.sg:hover{background:var(--accent-soft)}
+input,select,textarea{border-radius:0;border:1px solid var(--line);background:rgba(2,7,11,.6);font-family:var(--mono)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{background:rgba(2,7,11,.85);box-shadow:0 0 0 1px var(--accent),0 0 14px rgba(94,230,255,.25)}
+.send{border-radius:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.16em;box-shadow:0 0 14px rgba(94,230,255,.45)}
+.mic,.ghost,.rec{border-radius:0;background:none;color:var(--accent);border-color:var(--line)}
+.ghost,.rec{font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;font-size:12px}
+.mic:hover,.ghost:hover,.rec:hover{background:var(--accent-soft);border-color:var(--accent)}
+.rec{padding:18px}
+.recdot{box-shadow:0 0 10px var(--closed)}
+.rec.on{box-shadow:0 0 18px rgba(255,122,92,.35)}
+.field label{font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;font-size:11px}
+.hint{font-family:var(--mono)}
+@media (prefers-reduced-motion:reduce){.rings i{animation:none}}
