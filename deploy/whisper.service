@@ -1,0 +1,11 @@
+[Unit]
+Description=whisper.cpp server (só 127.0.0.1) para o Fedora
+# placa (Vulkan) + medium: 92% da VRAM medido com o qwen3 junto (2026-11-04); voltar: whisper.service.bak-cpu-small
+
+[Service]
+ExecStart=%h/.local/opt/whisper.cpp/build-vk/bin/whisper-server --host 127.0.0.1 --port 8178 -m %h/.local/share/whisper-models/ggml-medium-q5_0.bin -l pt -t 4 --convert
+WorkingDirectory=%t
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

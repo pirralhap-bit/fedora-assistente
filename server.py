@@ -1,5 +1,5 @@
 """
-JARVIS — a memory HUD driven by Claude Code.
+Fedora — local voice assistant driven by Claude Code.
 
     python3 server.py
 
@@ -40,7 +40,6 @@ import speech      # noqa: E402
 import sysinfo     # noqa: E402
 import modelo      # noqa: E402
 import tidy        # noqa: E402
-import voice       # noqa: E402
 
 PORT = int(os.environ.get("JARVIS_PORT", "8720"))
 def _token():
@@ -65,7 +64,6 @@ def _token():
 API_TOKEN = _token()
 RUN_LOCK = threading.Lock()
 MAX_JSON = 1024 * 1024
-MAX_AUDIO = 12 * 1024 * 1024
 SESSION = {"id": None}
 
 
@@ -120,10 +118,7 @@ class Handler(BaseHTTPRequestHandler):
                 runtime=runtime.runtime_kind(), version=runtime.version(),
                 model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
                 workdir=runtime.WORKDIR, vault=g["vault"], notes=g["total"],
-                links=len(g["links"]), voice=voice.describe(),
-                listener=voice.describe_stt(), stt=voice.stt_kind(),
-                server_stt=voice.stt_kind() in ("whisper", "fish"),
-                server_voice=voice.available(), session=SESSION["id"],
+                links=len(g["links"]), session=SESSION["id"],
                 ear=listener.EAR.state(), ear_error=listener.EAR.error))
 
         if p == "/api/events":
@@ -144,17 +139,6 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
 
-        if p == "/api/graph":
-            force = parse_qs(urlparse(self.path).query).get("force", ["0"])[0] == "1"
-            return self._json(memory.build_graph(force=force))
-
-        if p == "/api/note":
-            title = parse_qs(urlparse(self.path).query).get("id", [""])[0].lower()
-            for n in memory.build_graph()["nodes"]:
-                if n["id"] == title:
-                    return self._json(n)
-            return self._json({"error": "not found"}, 404)
-
         rel = "index.html" if p == "/" else p.lstrip("/")
         f = (UI / rel).resolve()
         if not str(f).startswith(str(UI.resolve())) or not f.is_file():
@@ -172,10 +156,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok():
             return self._json({"error": "unauthorized"}, 401)
         ctype = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        if p in {"/api/run", "/api/speak", "/api/new", "/api/cancel", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
+        if p in {"/api/run", "/api/speak", "/api/cancel", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
             return self._json({"error": "application/json required"}, 415)
         try:
-            raw = self._read(MAX_AUDIO if p == "/api/listen" else MAX_JSON)
+            raw = self._read(MAX_JSON)
         except (TypeError, ValueError):
             return self._json({"error": "body too large"}, 413)
 
@@ -189,12 +173,6 @@ class Handler(BaseHTTPRequestHandler):
             # a question keeps the mic open (8 s, no "Ok, Fedora") once the voice has finished, so it doesn't hear itself
             then = (lambda: listener.EAR.control("listen")) if text.rstrip().endswith("?") else None
             return self._json({"ok": speech.say(text, then)})
-
-        if p == "/api/listen":
-            try:
-                return self._json({"text": voice.transcribe(raw, self.headers.get("Content-Type", "audio/webm"))})
-            except Exception as e:  # noqa: BLE001
-                return self._json({"error": str(e)[:400], "text": ""}, 503)
 
         if p == "/api/ear":
             action = str(json.loads(raw or b"{}").get("action", ""))
@@ -219,11 +197,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": tidy.tidy_note(note)})
             except RuntimeError as e:
                 return self._json({"error": str(e)}, 503)
-
-        if p == "/api/new":
-            runtime.cancel_active()
-            SESSION["id"] = None
-            return self._json({"ok": True})
 
         if p == "/api/cancel":
             stopped = runtime.cancel_active()
@@ -339,8 +312,8 @@ def main():
   model        {runtime.MODEL or 'Claude default'}
   vault        {g['total']} notes · {len(g['links'])} links
                {g['vault']}
-  voice        {voice.describe()}
-  listening    {voice.describe_stt()}
+  voice        Piper ({os.path.basename(speech.VOICE)})
+  listening    whisper.cpp {listener.STT_URL}
   workdir      {runtime.WORKDIR}
   open         http://localhost:{PORT}
 """, flush=True)

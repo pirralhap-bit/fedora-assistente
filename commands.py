@@ -1,9 +1,6 @@
 """
-Command matrix + demo fixtures for the Claude-backed JARVIS.
-
-Local commands keep the HUD instant. Everything else goes to Claude Code with
-vault context attached. Demo fixtures intercept the scripted questions for a
-recording; set JARVIS_DEMO=0 to turn them off entirely.
+Command matrix for Fedora: slash commands and shortcuts answer locally; everything else
+goes to Claude Code with vault context attached.
 """
 import json
 import os
@@ -19,8 +16,7 @@ import memory
 ROOT = pathlib.Path(__file__).resolve().parent
 STATE_FILE = pathlib.Path(os.environ.get("JARVIS_STATE", ROOT / "state.json"))
 _LOCK = threading.Lock()
-_DEFAULT = {"profile": [], "goal": "", "personality": "", "tasks": [], "demo_pending": ""}
-DEMO = os.environ.get("JARVIS_DEMO", "1").strip().lower() not in {"0", "false", "no", "off"}
+_DEFAULT = {"profile": [], "goal": "", "personality": "", "tasks": []}
 
 
 def _load_unlocked():
@@ -95,118 +91,6 @@ Regras fixas:
 - Se o pedido parecer ter sido ouvido pela metade ou não fizer sentido, pergunte em vez de agir."""
 
 
-# ── demo fixtures ────────────────────────────────────────────────
-def _norm(text):
-    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
-
-
-def _has(norm, *groups):
-    words = set(norm.split())
-    return all(any(opt in words for opt in group) for group in groups)
-
-
-def _events(*tools):
-    out = []
-    for name in tools:
-        out.append({"t": "tool", "phase": "use", "name": name, "input": "vault + connectors"})
-        out.append({"t": "tool", "phase": "result", "name": name, "ok": True})
-    return out
-
-
-_YES = ("yes", "yeah", "yep", "yup", "sure", "ok", "okay", "affirmative", "absolutely",
-        "definitely", "correct", "confirmed", "of course", "go ahead", "do it",
-        "send it", "send them", "reply to them", "please do", "sounds good")
-
-
-def _affirmative(norm):
-    if not norm or len(norm.split()) > 8:
-        return False
-    return any(norm == p or norm.startswith(p + " ") for p in _YES)
-
-
-def demo_reply(message):
-    """Hardcoded beats for the recording. Everything not matched here goes to
-    the real Claude runtime, so the demo is scripted but the product is not.
-
-    Replies carry Fish Audio delivery tags in [brackets]. Fish performs them and
-    never speaks them, so JARVIS gets a register instead of a narrator monotone.
-    Set JARVIS_DEMO=0 to disable all of this.
-    """
-    if not DEMO:
-        return None
-    norm = _norm(message)
-
-    # ① mic check
-    if _has(norm, {"jarvis"}, {"hear"}) or norm in {"hello jarvis", "hey jarvis",
-                                                    "jarvis are you there"}:
-        return dict(message=None, focus="Campaign — August outbound", reply=(
-            "[warm] Every word. [dry] Let's hope it's a good one."
-        ), note="demo: greeting")
-
-    # ② the morning brief — calendar + invoices + the conflict you missed
-    # Needs an explicit "brief me", or a today/day marker — otherwise
-    # "summarise the Northbeam brief" would land here too.
-    if norm.startswith("brief me") or _has(norm, {"today", "day"},
-            {"whats", "what", "on", "my", "plate", "agenda", "look", "run", "catch", "plan"}):
-        update_state(lambda d: d.__setitem__("demo_pending", ""))
-        return dict(message=None, delay=2.4, focus="SOP — Handover",
-                    events=_events("googlecalendar_find_events", "gmail_fetch_emails"), reply=(
-            "[crisp] Three things. Northbeam's handover call is at eleven, and they've asked "
-            "for the runbook in advance — which you haven't written yet. Orchard Legal's invoice "
-            "went past terms this morning, that's twenty-six-fourteen. [dry] And you've put four "
-            "hours of deep work directly on top of the Fairview review. [lightly amused] One of "
-            "those is going to lose."), note="demo: morning brief")
-
-    # ③ memory question — the answer is in the vault, not the model
-    if _has(norm, {"client", "clients", "account"},
-                  {"time", "hours", "eating", "costing", "slowest", "most"}):
-        update_state(lambda d: d.__setitem__("demo_pending", ""))
-        return dict(message=None, delay=1.9, focus="Northbeam Automation",
-                    events=_events("read_vault"), reply=(
-            "[measured] Northbeam Automation, and it isn't close. Eighteen thousand booked, but "
-            "forty-one logged touchpoints against nine on a normal build — and almost all of them "
-            "are scope conversations that happened after the brief was signed. [dry] Which means "
-            "that engagement is quietly funding itself. [firm] Change orders, or it eats November "
-            "too."), note="demo: client time analysis")
-
-    # ④ live web research
-    if _has(norm, {"rate", "rates", "charging", "pricing", "price", "market", "competitors"},
-                  {"retainer", "retainers", "automation", "market", "right", "now", "competitors",
-                   "charging", "going"}):
-        update_state(lambda d: d.__setitem__("demo_pending", ""))
-        return dict(message=None, delay=5.0, focus="Positioning",
-                    events=_events("web_search"), reply=(
-            "[thinking] Three bands, and they've pulled apart since spring. Independents are "
-            "anchoring around eight hundred to fifteen hundred a month, competing mostly on how "
-            "fast they pick up the phone. The middle has settled at three to five thousand with an "
-            "SLA attached. Above that, agencies are bundling strategy retainers at twelve and up. "
-            "[pointed] What nobody's charging for is the component library itself. They're all "
-            "still selling hours with a monthly label on them."),
-            note="demo: market rates")
-
-    # ⑤ inbound replies -> ⑥ book them
-    if _has(norm, {"bite", "bites", "biting", "reply", "replies", "replied", "response",
-                   "responses", "responded", "interest", "interested", "back", "anyone", "anybody"},
-                  {"audit", "offer", "campaign", "outreach", "outbound", "email", "emails",
-                   "sequence", "cold"}):
-        update_state(lambda d: d.__setitem__("demo_pending", "audit_booking"))
-        return dict(message=None, delay=1.8, focus="Brief — Audit offer",
-                    events=_events("gmail_fetch_emails"), reply=(
-            "[pleased] Two, both before nine. Ines Duarte at Kestrel Logistics, and a new one — "
-            "Dominik Reyes at Halcyon Freight, who came through Ines. [neutral] Both want the "
-            "audit. Shall I get them in the diary?"), note="demo: audit replies")
-
-    if _affirmative(norm) and load().get("demo_pending") == "audit_booking":
-        update_state(lambda d: d.__setitem__("demo_pending", ""))
-        return dict(message=None, delay=2.6, focus="Kestrel Logistics",
-                    events=_events("gmail_send_email", "googlecalendar_create_event"), reply=(
-            "[satisfied] Done. Ines is Wednesday at ten, Dominik Thursday at two, both invites "
-            "out with the pre-audit questionnaire attached. [dry] Dominik's assistant came back "
-            "inside a minute, which tells you most of what you need to know about that account."), note="demo: audits booked")
-
-    return None
-
-
 # ── slash commands ───────────────────────────────────────────────
 _CMD = re.compile(
     r"^\s*/(new|profile|goal|personality|kanban|mission|missions|recall|memory|graph|"
@@ -231,9 +115,6 @@ Anything else goes to Claude Code with the relevant vault notes attached."""
 
 
 def handle(message, runner=None):
-    demo = demo_reply(message)
-    if demo:
-        return demo
     m = _CMD.match(message or "")
     if not m:
         reply = atalhos.route(message)

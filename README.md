@@ -10,35 +10,38 @@ Base: fork de jarvis-claude-code (98b1972), com a interface trocada.
 ## Rodar
 
 ```bash
-./start.sh          # abre em http://localhost:8720
+./deploy/instalar.sh   # instala e liga os serviços (whisper, ollama, fedora-assistente)
+./tools/testa.sh       # roda o autoteste de cada módulo
 ```
 
-Configuração em `.env` (vault, permissão do Claude, porta, modelo do Ollama, whisper).
+Configuração em `.env` (vault, permissão do Claude, porta, modelo do Ollama, endereço do whisper); dependências do `.venv` em `requirements.txt`.
 
 ## Peças
 
 | Arquivo | O que faz |
 |---|---|
 | `server.py` | servidor HTTP local; só aceita `localhost` e exige token nos POST |
-| `runtime.py` | chama `claude -p` (permissão `default`, nunca `bypassPermissions`) |
+| `runtime.py` | chama `claude -p` (acesso total; a lista `DENY` veta desligar o PC e apagar por `rm`/`dd`/`shred`) |
 | `sysinfo.py` | CPU, RAM (`/proc`), GPU/VRAM da AMD (sysfs), modelos do Ollama |
 | `notes.py` | lista, lê e salva daily notes; recusa salvar se a nota mudou fora (Obsidian) |
-| `tidy.py` | manda o trecho ditado ao Ollama e devolve Markdown |
-| `listener.py` | ouvido sempre ligado: microfone (PipeWire) → detecção de fala → whisper; só reage a “Ok, Fedora” |
+| `tidy.py` | reorganiza a nota diária inteira pelas seções (Ollama), sem perder linha |
+| `atalhos.py` + `atalhos.md` | pedidos rápidos sem Claude: o qwen3 escolhe o atalho, o código executa |
+| `modelo.py` | qwen3 carregado na placa enquanto a janela está aberta |
+| `vad.py` | Silero VAD: decide o que é fala |
+| `listener.py` | ouvido sempre ligado: microfone (PipeWire) → Silero → whisper; só reage a “Ok, Fedora” |
 | `speech.py` | voz: Piper (pt_BR faber) tocando direto na caixa de som com pw-play |
-| `voice.py` | (legado) áudio do navegador → whisper.cpp |
 | `ui/index.html` | a interface inteira (buraco negro + `#notas`) |
 
 ## Serviços (systemd de usuário)
 
 | Serviço | O quê |
 |---|---|
-| `whisper.service` | whisper.cpp `small` carregado em 127.0.0.1:8178 |
-| `ollama.service` | Ollama em 127.0.0.1:11434, RX 580 via Vulkan, modelo `gemma3:4b` |
+| `whisper.service` | whisper.cpp `medium` na placa (Vulkan) em 127.0.0.1:8178 |
+| `ollama.service` | Ollama em 127.0.0.1:11434, RX 580 via Vulkan, modelo `qwen3:8b` |
 | `fedora-assistente.service` | este servidor (porta 8720) + o ouvido |
 
-Ligar tudo no login: `systemctl --user enable --now whisper ollama fedora-assistente`
-Abrir a janela: menu de apps → **Fedora** (Brave em modo app).
+Os arquivos dos serviços e atalhos ficam em `deploy/` (cópia do que está instalado em `~/.config`).
+Abrir a janela: menu de apps → **Fedora** (Chrome em modo app); abre sozinha no login.
 
 ## Usar
 
