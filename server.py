@@ -42,7 +42,26 @@ import tidy        # noqa: E402
 import voice       # noqa: E402
 
 PORT = int(os.environ.get("JARVIS_PORT", "8720"))
-API_TOKEN = secrets.token_urlsafe(32)
+def _token():
+    """Same token across service restarts (an open window keeps working); new one each boot (tmpfs)."""
+    f = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "fedora-assistente.token"
+    try:
+        tok = f.read_text().strip()
+        if len(tok) >= 32:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(32)
+    try:
+        fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(tok)
+    except OSError:
+        pass   # no runtime dir: fall back to a per-process token
+    return tok
+
+
+API_TOKEN = _token()
 RUN_LOCK = threading.Lock()
 MAX_JSON = 1024 * 1024
 MAX_AUDIO = 12 * 1024 * 1024
