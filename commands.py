@@ -57,7 +57,8 @@ def update_state(mutator):
 def context_block(message=""):
     """Dashboard state + the vault notes relevant to this turn."""
     d = load()
-    out = []
+    # saves a tool round trip (date) on "que horas são?" and lets "amanhã"/"sexta" resolve without one
+    out = [time.strftime("## Agora\n%A, %d/%m/%Y %H:%M (horário local)")]
     if d["profile"]:
         out.append("## Operator profile\n" + "\n".join(f"- {x}" for x in d["profile"][-40:]))
     if d["goal"]:
