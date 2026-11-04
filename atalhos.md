@@ -8,7 +8,7 @@ Pode editar os exemplos, os sites e as palavras à vontade. Atalho novo aqui sem
 - `hora`: diz a hora certa. Ex.: "que horas são", "me diz as horas", "fala a hora aí"
 - `data`: diz o dia de hoje. Ex.: "que dia é hoje", "hoje é dia quanto", "que dia da semana é hoje"
 - `abrir_pasta` (arg = nome da pasta): Downloads, Documentos, Imagens, Músicas, Vídeos, Área de trabalho, pasta pessoal, Projetos, ou outra pasta da pasta pessoal. Ex.: "abre meus downloads", "abre a pasta projetos"
-- `abrir_app` (arg = nome do app): abre um programa instalado. Ex.: "abre o chrome", "abre o dolphin", "abre o obsidian", "abre a calculadora", "abre o orca slicer"
+- `abrir_app` (arg = nome do app ou do jogo): abre um programa instalado ou um jogo da Steam. Ex.: "abre o chrome", "abre o dolphin", "abre o obsidian", "abre a calculadora", "abre o orca slicer", "abre a steam", "abre o cities skylines 2", "abre o cs2", "bota o terraria"
 - `abrir_site` (arg = nome do site da lista "Sites" abaixo): Ex.: "abre o youtube", "abre o gmail", "abre o trailhead", "entra no github"
 - `pesquisar_web` (arg = termo): abre uma busca do Google no navegador. Só quando o pedido diz pesquisar, procurar ou buscar NO GOOGLE/NA INTERNET. Ex.: "pesquisa preço do PLA", "procura no google suporte de filamento", "busca na internet receita de pão"
 - `volume` (arg = número de 0 a 100, "mais", "menos" ou "mudo"): volume da caixa de som. Ex.: "volume 40", "aumenta o volume", "abaixa o som", "muta"
@@ -45,4 +45,4 @@ Pode editar os exemplos, os sites e as palavras à vontade. Atalho novo aqui sem
 O ouvido transcreve em português e escreve esses nomes do jeito que soam ("espectáculo" = Spectacle, "console" = Konsole, "trilhear" = Trailhead, "obsidiana" = Obsidian). No `arg`, escreva sempre o nome certo desta lista quando o pedido soar parecido com um deles.
 
 
-Chrome, Obsidian, Spectacle, Dolphin, Konsole, Kate, Discord, Steam, Spotify, Firefox, Minecraft, OrcaSlicer, CrealityPrint, OpenSCAD, Visual Studio Code, LibreOffice, Okular, KCalc, LocalSend, RustDesk, Prism Launcher, MakerFlow, Claude, YouTube, Gmail, Trailhead, WhatsApp, Shopee, GitHub, Google, print, timer, PLA
+Chrome, Obsidian, Spectacle, Dolphin, Konsole, Kate, Discord, Steam, Spotify, Firefox, Minecraft, OrcaSlicer, CrealityPrint, OpenSCAD, Visual Studio Code, LibreOffice, Okular, KCalc, LocalSend, RustDesk, Prism Launcher, MakerFlow, Claude, YouTube, Gmail, Trailhead, WhatsApp, Shopee, GitHub, Google, print, timer, PLA, Steam, Counter-Strike, Cities: Skylines, Grand Theft Auto, GTA, ARK, Terraria, tModLoader, Albion Online, The Sandbox Evolution

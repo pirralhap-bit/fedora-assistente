@@ -83,6 +83,43 @@ def _apps():
         yield pathlib.Path(f).stem, names
 
 
+_STEAM = HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
+_ROMANO = {"2": "ii", "3": "iii", "4": "iv", "5": "v"}
+
+
+def _jogos():
+    """(appid, name) of installed Steam games, every library, without Proton/runtimes."""
+    libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(errors="replace")) \
+        if (_STEAM / "steamapps/libraryfolders.vdf").exists() else []
+    for lib in libs or [str(_STEAM)]:
+        for f in glob.glob(lib + "/steamapps/appmanifest_*.acf"):
+            t = pathlib.Path(f).read_text(errors="replace")
+            appid, name = re.search(r'"appid"\s+"(\d+)"', t), re.search(r'"name"\s+"([^"]+)"', t)
+            if appid and name and not re.search(r"proton|runtime|redistributable", name.group(1), re.I):
+                yield appid.group(1), name.group(1)
+
+
+def _palavras(name):
+    return [_ROMANO.get(w, w) for w in re.findall(r"\w+", fold(name))]
+
+
+def abrir_jogo(arg):
+    """'cities skylines 2', 'gta', 'cs2', 'counter strike' -> launches through Steam."""
+    a = _palavras(arg)
+    if not a:
+        return None
+    for appid, name in _jogos():
+        w = _palavras(name)
+        cru = re.findall(r"\w+", fold(name))   # before 2 -> ii, so "Counter-Strike 2" -> "cs2"
+        sigla = "".join(x[0] for x in cru if x.isalpha()) + "".join(x for x in cru if x.isdigit())
+        junto = "".join(a)
+        if all(x in w for x in a) or (len(junto) >= 2 and (sigla.startswith(junto) or junto == "".join(x[0] for x in w))) or \
+                difflib.SequenceMatcher(None, " ".join(a), " ".join(w)).ratio() >= 0.8:
+            _detach(["xdg-open", f"steam://rungameid/{appid}"])
+            return f"Abrindo {name} pela Steam."
+    return None
+
+
 def abrir_app(arg, msg=""):
     a = re.sub(r"^(o |a |um |uma |app |aplicativo |programa )+", "", fold(arg))
     if not a:
@@ -96,7 +133,7 @@ def abrir_app(arg, msg=""):
         close = difflib.get_close_matches(squash, list(by_name), n=1, cutoff=0.75)
         loose = [by_name[close[0]]] if close else []
     if not loose:
-        return None
+        return abrir_jogo(arg)
     _detach(["gtk-launch", loose[0]])
     return f"Abrindo {arg.strip()}."
 
@@ -355,6 +392,16 @@ if __name__ == "__main__":
     assert _pasta("pasta projetos") == HOME / "Projetos", _pasta("pasta projetos")
     assert _pasta("xyz inexistente") is None
     assert any("chrome" in n for i, names in _apps() for n in names)
+    jogos = dict((n, i) for i, n in _jogos())
+    if jogos:   # matching only (not launching): monkeypatch the launcher
+        _real, launched = _detach, []
+        globals()["_detach"] = launched.append
+        for falado, nome in [("cities skylines 2", "Cities: Skylines II"), ("gta", "Grand Theft Auto V Enhanced"),
+                             ("cs2", "Counter-Strike 2"), ("counter strike", "Counter-Strike 2"), ("terraria", "Terraria")]:
+            if nome in jogos:
+                assert abrir_jogo(falado) and launched[-1][-1].endswith(jogos[nome]), (falado, launched[-1:])
+        assert abrir_jogo("jogo que não existe") is None
+        globals()["_detach"] = _real
     assert duracao("20 minutos") == 1200 and duracao("1 hora e meia") == 5400 and duracao("meia hora") == 1800
     assert duracao("uma hora e 15 minutos") == 4500 and duracao("tirar a peça") is None
     assert "youtube" in _section("Sites") and _section("Sites")["trailhead"].startswith("https://")
