@@ -213,10 +213,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/tidy":
             try:
-                text = (json.loads(raw or b"{}").get("text") or "").strip()
-                if not text:
-                    return self._json({"error": "texto vazio"}, 400)
-                return self._json({"text": tidy.tidy(text)})
+                note = json.loads(raw or b"{}").get("note") or ""
+                if not note.strip():
+                    return self._json({"error": "nota vazia"}, 400)
+                return self._json({"text": tidy.tidy_note(note)})
             except RuntimeError as e:
                 return self._json({"error": str(e)}, 503)
 

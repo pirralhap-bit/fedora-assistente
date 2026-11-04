@@ -330,11 +330,10 @@ function insertDictation(text){
   ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
   ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Diga “Ok, Fedora, organizar” ou clique em “Ollama: organizar”.')}
 async function tidyText(){
-  let[s,e]=ta.selectionStart!==ta.selectionEnd?[ta.selectionStart,ta.selectionEnd]:dictRange||[0,0];
-  const part=ta.value.slice(s,e).trim();if(!part)return hint('Selecione um trecho ou dite algo antes de organizar.');
-  $('tidy').disabled=true;setV('think');hint('Ollama reescrevendo…');
-  try{const r=await api('/api/tidy',{text:part});prevText=ta.value;ta.setRangeText(r.text,s,e,'select');dictRange=[s,s+r.text.length];
-    $('undo').disabled=false;hint('Pronto. Revise; “Desfazer” volta ao texto original.')}
+  if(!ta.value.trim())return hint('A nota está vazia.');
+  $('tidy').disabled=true;setV('think');hint('Ollama lendo e reorganizando a nota inteira…');
+  try{const r=await api('/api/tidy',{note:ta.value});prevText=ta.value;ta.value=r.text;dictRange=null;
+    $('undo').disabled=false;hint('Pronto. Revise e salve; “Desfazer” volta à nota de antes.')}
   catch(e){hint(errMsg(e))}finally{$('tidy').disabled=false;setV('idle')}}
 $('dictate').onclick=dictate;$('tidy').onclick=tidyText;$('save').onclick=saveNote;
 $('mini').addEventListener('click',dictate);$('mini').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();dictate()}});
