@@ -22,8 +22,10 @@ import uuid
 import wave
 
 import speech
+import vad
 
-RATE, FRAME = 16000, 320                      # 20 ms frames, 16-bit mono
+RATE, FRAME = 16000, 512                      # 32 ms frames, 16-bit mono (the block Silero VAD expects)
+FPS = RATE / FRAME
 STT_URL = os.environ.get("WHISPER_URL", "http://127.0.0.1:8178/inference")   # small model, kept loaded
 NAME = os.environ.get("ASSISTANT_NAME", "Fedora")
 DEBUG = os.environ.get("FEDORA_DEBUG") == "1"
@@ -31,8 +33,9 @@ HINT = f"Ok, {NAME}."     # initial prompt: tells whisper the name is a word it 
 APP_URL = f"http://localhost:{os.environ.get('JARVIS_PORT', '8720')}/"
 APP_CMD = os.environ.get("FEDORA_APP_CMD", "google-chrome-stable --app={url}")
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
-SILENCE = {"wake": 60, "command": 80, "dictate": 150}      # frames (20 ms) of quiet that end a segment; ~1 s pauses mid-sentence are normal
-MAX_LEN = {"wake": 20 * 50, "command": 30 * 50, "dictate": 10 * 60 * 50}
+# seconds of quiet that end a segment (~1 s pauses mid-sentence are normal) and longest segment, in frames
+SILENCE = {k: int(v * FPS) for k, v in {"wake": 1.2, "command": 1.6, "dictate": 3.0}.items()}
+MAX_LEN = {k: int(v * FPS) for k, v in {"wake": 20, "command": 30, "dictate": 600}.items()}
 
 
 def fold(text):
@@ -189,6 +192,7 @@ class Ear:
     def _listen(self, stream):
         floor, loud, speech, quiet, pre = 300.0, 0, None, 0, []
         last_level = 0.0
+        silero = vad.load()          # None: fall back to loudness
         while self.on and self.proc:
             chunk = stream.read(FRAME * 2)
             if not chunk or len(chunk) < FRAME * 2:
@@ -206,20 +210,25 @@ class Ear:
                 self.mode = "wake"
                 self.emit(dict(t="state", v=self.state()))
             thr = max(floor * 3, 450)
+            if silero:   # hysteresis: harder to start a segment than to keep one going
+                voiced = silero.prob(chunk) > (0.35 if speech is not None else 0.5)
+            else:
+                voiced = lv > thr
+                if speech is None and not voiced:
+                    floor = floor * 0.98 + lv * 0.02
             if speech is None:
-                floor = floor * 0.98 + lv * 0.02 if lv < thr else floor
-                pre = (pre + [chunk])[-15:]                       # 300 ms pre-roll so the first syllable survives
-                loud = loud + 1 if lv > thr else 0
-                if loud >= 3:
+                pre = (pre + [chunk])[-int(0.3 * FPS):]           # 300 ms pre-roll so the first syllable survives
+                loud = loud + 1 if voiced else 0
+                if loud >= 2:
                     speech, quiet = pre[:], 0
                     if self.mode != "wake":
                         self.emit(dict(t="state", v="listen" if self.mode == "command" else "dict"))
                 continue
             speech.append(chunk)
-            quiet = 0 if lv > thr else quiet + 1
+            quiet = 0 if voiced else quiet + 1
             if quiet >= SILENCE[self.mode] or len(speech) >= MAX_LEN[self.mode] or self.force_end:
                 self.force_end = False
-                if len(speech) - quiet > 15:                      # ignore clicks shorter than ~0.3 s
+                if len(speech) - quiet > int(0.3 * FPS):          # ignore clicks shorter than ~0.3 s
                     self.jobs.put((self.mode, b"".join(speech)))
                     if self.mode != "wake":
                         self.mode = "busy"

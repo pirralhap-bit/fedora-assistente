@@ -10,3 +10,4 @@ raw-*.log
 .kiro/
 __pycache__/
 state.json
+.venv/
