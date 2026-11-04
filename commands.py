@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 
+import atalhos
 import memory
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -235,7 +236,8 @@ def handle(message, runner=None):
         return demo
     m = _CMD.match(message or "")
     if not m:
-        return None
+        reply = atalhos.route(message)
+        return dict(message=None, reply=reply, note="atalho") if reply else None
     cmd, arg = m.group(1).lower(), m.group(2).strip()
     d = load()
 
