@@ -28,7 +28,7 @@ NAME = os.environ.get("ASSISTANT_NAME", "Fedora")
 DEBUG = os.environ.get("FEDORA_DEBUG") == "1"
 HINT = f"Ok, {NAME}."     # initial prompt: tells whisper the name is a word it should expect
 APP_URL = f"http://localhost:{os.environ.get('JARVIS_PORT', '8720')}/"
-APP_CMD = os.environ.get("FEDORA_APP_CMD", "brave-browser --app={url}")
+APP_CMD = os.environ.get("FEDORA_APP_CMD", "google-chrome-stable --app={url}")
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
 SILENCE = {"wake": 35, "command": 45, "dictate": 150}      # frames of quiet that end a segment
 MAX_LEN = {"wake": 12 * 50, "command": 15 * 50, "dictate": 10 * 60 * 50}
