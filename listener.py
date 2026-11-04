@@ -23,6 +23,7 @@ import wave
 RATE, FRAME = 16000, 320                      # 20 ms frames, 16-bit mono
 STT_URL = os.environ.get("WHISPER_URL", "http://127.0.0.1:8178/inference")   # small model, kept loaded
 NAME = os.environ.get("ASSISTANT_NAME", "Fedora")
+DEBUG = os.environ.get("FEDORA_DEBUG") == "1"
 HINT = f"Ok, {NAME}."     # initial prompt: tells whisper the name is a word it should expect
 APP_URL = f"http://localhost:{os.environ.get('JARVIS_PORT', '8720')}/"
 APP_CMD = os.environ.get("FEDORA_APP_CMD", "brave-browser --app={url}")
@@ -232,7 +233,10 @@ class Ear:
 
     def _handle(self, mode, pcm):
         if mode == "wake":
-            rest = strip_wake(whisper(STT_URL, pcm, timeout=30))
+            heard = whisper(STT_URL, pcm, timeout=30)
+            rest = strip_wake(heard)
+            if DEBUG:  # off by default: it writes what was said to the journal
+                print(f"[ouvido] {len(pcm) / 32000:.1f}s ouvi={heard!r} -> {'comando=' + repr(rest) if rest is not None else 'ignorado'}", flush=True)
             if rest is None:
                 return
             self.emit(dict(t="wake"))
