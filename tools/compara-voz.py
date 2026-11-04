@@ -1,13 +1,21 @@
-"""Run every saved clip through small/medium/turbo with Fedora's own whisper() call; print text and time."""
-import os, pathlib, time, wave, sys
+"""Compare speech models on saved clips: python3 tools/compara-voz.py <pasta-com-wav>. Text + time per clip and model.
+Servers: small :8178 (the service), medium :8179, turbo :8180 (start them by hand, see docs/SESSAO-2026-11-03.md)."""
+import pathlib, sys, time, wave
 import listener
-URLS = {"small": "http://127.0.0.1:8178/inference", "medium": "http://127.0.0.1:8179/inference", "turbo": "http://127.0.0.1:8180/inference"}
-clips = sorted((pathlib.Path(os.environ["XDG_RUNTIME_DIR"]) / "fedora-ouvido").glob("*.wav"))
-tot = {k: 0.0 for k in URLS}
-for c in clips:
+
+VARIANTES = {"small": ("http://127.0.0.1:8178/inference", None), "medium": ("http://127.0.0.1:8179/inference", None),
+             "turbo": ("http://127.0.0.1:8180/inference", None), "turbo-cheio": ("http://127.0.0.1:8180/inference", 0)}
+orig = listener.whisper
+tot = {k: 0.0 for k in VARIANTES}
+for c in sorted(pathlib.Path(sys.argv[1]).glob("*.wav")):
     w = wave.open(str(c)); pcm = w.readframes(w.getnframes())
     print(f"\n{c.name} ({len(pcm)/32000:.1f}s)")
-    for k, u in URLS.items():
-        t = time.perf_counter(); out = listener.whisper(u, pcm); dt = time.perf_counter() - t; tot[k] += dt
-        print(f"  {k:6} {dt:5.2f}s  {out!r}")
+    for k, (url, ctx) in VARIANTES.items():
+        if ctx is None:
+            fn = orig
+        else:   # full 30 s window: listener's short-clip audio_ctx trick switched off
+            sec = listener.RATE * 2
+            fn = lambda u, p: orig(u, p + b"\0" * max(0, 26 * sec - len(p)))   # >25 s of audio makes whisper() pick ctx=0
+        t = time.perf_counter(); out = fn(url, pcm); dt = time.perf_counter() - t; tot[k] += dt
+        print(f"  {k:11} {dt:5.2f}s  {out!r}")
 print("\ntempo total:", {k: round(v, 1) for k, v in tot.items()})
