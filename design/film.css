@@ -1,10 +1,10 @@
-/* Estilo filme — same three panes, rebuilt as a holographic HUD: cyan hairlines, bracket corners, rotating rings behind the graph. Single dark theme. */
+/* Estilo filme — same three panes, rebuilt as a holographic HUD: cyan hairlines, bracket corners, folders orbiting a core. Single dark theme. */
 :root:not(#_){
   --bg:#02070b; --pane:rgba(8,24,32,.55); --sunk:rgba(94,230,255,.06); --line:rgba(94,230,255,.22); --fg:#d9f6ff; --dim:#6fa3b3;
   --accent:#5ee6ff; --accent-soft:rgba(94,230,255,.14); --accent-fg:#021118; --open:#7dffb2; --closed:#ff7a5c; --hot:#ffb347;
   --edge:rgba(94,230,255,.16); --edge-on:#5ee6ff; --label:#d9f6ff; --node-s:85%; --node-l:66%; --glow:8;
   --sans:"Rajdhani","Segoe UI",system-ui,sans-serif; --mono:"Share Tech Mono",ui-monospace,Menlo,monospace;
-  --label-font:"Share Tech Mono",ui-monospace,monospace; --r:2px; color-scheme:dark;
+  --label-font:"Share Tech Mono",ui-monospace,monospace; --r:2px; --layout:orbit; color-scheme:dark;
 }
 body{font:500 15px/1.4 var(--sans);letter-spacing:.02em;
   background:radial-gradient(ellipse 80% 60% at 50% 45%,#08202b 0%,var(--bg) 70%) fixed,var(--bg)}
@@ -36,12 +36,6 @@ h2::before{content:"▸"}
 .chip{border-radius:0;border:1px dashed var(--line);background:none;font-family:var(--mono)}
 
 .stage{background:transparent}
-.rings{display:grid;place-items:center;position:absolute;inset:0;pointer-events:none}
-.rings i{grid-area:1/1;border-radius:50%;border:1px solid var(--line)}
-.rings i:nth-child(1){width:min(78%,78vh);aspect-ratio:1;border-style:dashed;animation:spin 90s linear infinite}
-.rings i:nth-child(2){width:min(62%,62vh);aspect-ratio:1;border-width:2px;border-color:transparent var(--line) transparent var(--line);animation:spin 40s linear infinite reverse}
-.rings i:nth-child(3){width:min(94%,94vh);aspect-ratio:1;border-color:rgba(94,230,255,.08)}
-@keyframes spin{to{transform:rotate(360deg)}}
 .gtitle b{font-family:var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
 .gtitle span,.legend{font-family:var(--mono);font-size:11px;letter-spacing:.06em}
 .legend i{border-radius:50%}
@@ -51,7 +45,7 @@ h2::before{content:"▸"}
 .chat header small{text-transform:uppercase;letter-spacing:.12em}
 .tabs{border-radius:0;background:none;border:1px solid var(--line);padding:2px}
 .tabs button{border-radius:0;font-family:var(--mono);text-transform:uppercase;letter-spacing:.14em;font-size:12px}
-.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-fg);box-shadow:0 0 12px rgba(94,230,255,.5)}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);box-shadow:0 0 12px rgba(94,230,255,.5)}
 .msg.you{border-radius:0;background:var(--accent-soft);color:var(--fg);border:1px solid var(--accent);box-shadow:0 0 12px rgba(94,230,255,.15)}
 .msg.jar{border-left:2px solid var(--accent);padding-left:10px}
 .msg.jar .who{font-family:var(--mono);letter-spacing:.24em;text-transform:uppercase;text-shadow:0 0 8px var(--accent)}
@@ -65,9 +59,10 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{background:rgba(
 .mic,.ghost,.rec{border-radius:0;background:none;color:var(--accent);border-color:var(--line)}
 .ghost,.rec{font-family:var(--mono);text-transform:uppercase;letter-spacing:.12em;font-size:12px}
 .mic:hover,.ghost:hover,.rec:hover{background:var(--accent-soft);border-color:var(--accent)}
-.rec{padding:18px}
+.rec{padding:12px 22px}
+.rect{color:var(--accent)}
+.dictpane textarea{background:rgba(2,7,11,.75)}
 .recdot{box-shadow:0 0 10px var(--closed)}
 .rec.on{box-shadow:0 0 18px rgba(255,122,92,.35)}
 .field label{font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;font-size:11px}
 .hint{font-family:var(--mono)}
-@media (prefers-reduced-motion:reduce){.rings i{animation:none}}

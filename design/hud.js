@@ -77,18 +77,54 @@ for(let k=0;k<260;k++){const al=1-k/300;
     const f=800/d2*al;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
   L.forEach(([i,j])=>{const a=P[i],b=P[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,f=(d-36)*.02*al;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f});
   P.forEach(p=>{p.vx+=(p.ax-p.x)*.004*al;p.vy+=(p.ay-p.y)*.004*al;p.vx*=.82;p.vy*=.82;p.x+=p.vx;p.y+=p.vy})}
+// ---- orbit layout (film style): folders circle a core on concentric rings, notes circle their folder
+const ORBIT=css('--layout')==='orbit';
+let orbitT=0;const RINGS=[],GI={};
+if(ORBIT){
+  const off=N.map(()=>({x:0,y:0,vx:0,vy:0}));
+  groups.forEach(g=>{
+    const ids=N.map((n,i)=>n.g===g?i:-1).filter(i=>i>=0),set=new Set(ids);
+    ids.forEach((i,k)=>{const a=k*2.4,r=6*Math.sqrt(k);off[i].x=Math.cos(a)*r;off[i].y=Math.sin(a)*r});
+    const inner=L.filter(([a,b])=>set.has(a)&&set.has(b));
+    for(let k=0;k<200;k++){const al=1-k/240;
+      for(let x=0;x<ids.length;x++)for(let y=x+1;y<ids.length;y++){const a=off[ids[x]],b=off[ids[y]],dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy+.01;if(d2>10000)continue;
+        const f=260/d2*al;a.vx+=dx*f;a.vy+=dy*f;b.vx-=dx*f;b.vy-=dy*f}
+      inner.forEach(([i,j])=>{const a=off[i],b=off[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,f=(d-22)*.03*al;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f});
+      ids.forEach(i=>{const p=off[i];p.vx-=p.x*.01*al;p.vy-=p.y*.01*al;p.vx*=.8;p.vy*=.8;p.x+=p.vx;p.y+=p.vy})}
+    const r=Math.max(14,...ids.map(i=>Math.hypot(off[i].x,off[i].y)))+8;
+    GI[g]={ids,r,ring:ids.length<=5?0:ids.length<=30?1:2};
+  });
+  N.forEach((n,i)=>{P[i].ox=off[i].x;P[i].oy=off[i].y});
+  let prev=0,prevMax=0;
+  for(let k=0;k<3;k++){const gs=groups.filter(g=>GI[g].ring===k);if(!gs.length)continue;
+    const maxr=Math.max(...gs.map(g=>GI[g].r)),need=gs.reduce((s,g)=>s+2*GI[g].r+40,0)/(2*Math.PI);
+    const R=Math.max(prev?prev+prevMax+maxr+50:60+maxr,need);RINGS.push({R,k,speed:(k%2?-1:1)*.035/(k+1)});
+    let a=k*1.1;const tot=gs.reduce((s,g)=>s+2*GI[g].r+40,0);
+    gs.forEach(g=>{const span=(2*GI[g].r+40)/tot*Math.PI*2;GI[g].phase=a+span/2;GI[g].R=R;GI[g].speed=RINGS.at(-1).speed;a+=span});
+    prev=R;prevMax=maxr}
+}
+function place(){groups.forEach(g=>{const G=GI[g],a=G.phase+G.speed*orbitT,cx0=Math.cos(a)*G.R,cy0=Math.sin(a)*G.R,s=orbitT*.06,c=Math.cos(s),sn=Math.sin(s);
+  G.cx=cx0;G.cy=cy0;G.ids.forEach(i=>{const p=P[i];p.x=cx0+p.ox*c-p.oy*sn;p.y=cy0+p.ox*sn+p.oy*c})})}
+if(ORBIT)place();
 const bounds=()=>{let a=1e9,b=1e9,c=-1e9,d=-1e9;P.forEach(p=>{a=Math.min(a,p.x);b=Math.min(b,p.y);c=Math.max(c,p.x);d=Math.max(d,p.y)});return{x:(a+c)/2,y:(b+d)/2,w:c-a,h:d-b}};
 
 // ---- render: names appear only around a note you asked about
 const cv=$('g'),cx=cv.getContext('2d');let W=1,H=1,dpr=1,view={x:0,y:0,s:1},target=null,focus=-1,colors=[];
 const reduce=matchMedia('(prefers-reduced-motion: reduce)');
 const toS=p=>[(p.x-view.x)*view.s+W/2,(p.y-view.y)*view.s+H/2];
-function fitView(){const b=bounds();return{x:b.x,y:b.y-10,s:Math.min(W/(b.w+80),(H-90)/(b.h+80))}}
+function fitView(){if(ORBIT){const R=Math.max(...groups.map(g=>GI[g].R+GI[g].r));return{x:0,y:0,s:Math.min(W,H-60)/(2*R+30)}}
+  const b=bounds();return{x:b.x,y:b.y-10,s:Math.min(W/(b.w+80),(H-90)/(b.h+80))}}
 function resize(){dpr=devicePixelRatio||1;W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;if(!resize.done&&W>10){view=fitView();resize.done=1}draw()}
 function draw(){
   cx.setTransform(dpr,0,0,dpr,0,0);cx.clearRect(0,0,W,H);
   const lit=focus<0?null:new Set([focus,...nb[focus]]),edge=css('--edge'),on=css('--edge-on'),lab=css('--label'),acc=css('--accent'),glow=+css('--glow')||0;
   cx.lineWidth=1;
+  if(ORBIT){const[ox,oy]=toS({x:0,y:0});
+    cx.setLineDash([2,6]);cx.strokeStyle=css('--line');RINGS.forEach(r=>{cx.beginPath();cx.arc(ox,oy,r.R*view.s,0,7);cx.stroke()});cx.setLineDash([]);
+    groups.forEach(g=>{const G=GI[g],[gx,gy]=toS({x:G.cx,y:G.cy});cx.strokeStyle=colOf(g);cx.globalAlpha=.25;cx.beginPath();cx.arc(gx,gy,G.r*view.s,0,7);cx.stroke()});
+    cx.globalAlpha=1;const cr=Math.max(8,26*view.s),gr=cx.createRadialGradient(ox,oy,0,ox,oy,cr*2.2);
+    gr.addColorStop(0,acc);gr.addColorStop(.35,css('--accent-soft'));gr.addColorStop(1,'transparent');cx.fillStyle=gr;cx.beginPath();cx.arc(ox,oy,cr*2.2,0,7);cx.fill();
+    cx.strokeStyle=acc;cx.lineWidth=2;cx.beginPath();cx.arc(ox,oy,cr,0,7);cx.stroke();cx.lineWidth=1}
   L.forEach(([i,j])=>{const hot=lit&&(i===focus||j===focus);cx.strokeStyle=hot?on:edge;cx.globalAlpha=lit&&!hot?.35:1;
     const a=toS(P[i]),b=toS(P[j]);cx.beginPath();cx.moveTo(a[0],a[1]);cx.lineTo(b[0],b[1]);cx.stroke()});
   cx.globalAlpha=1;
@@ -131,11 +167,12 @@ $('zin').onclick=()=>go({...view,s:Math.min(6,view.s*1.4)});
 $('zout').onclick=()=>go({...view,s:Math.max(.2,view.s/1.4)});
 $('fit').onclick=()=>{focus=-1;go(fitView())};
 
-// ---- tabs
-const tabs=[['t-chat','p-chat'],['t-dict','p-dict']];
-function showTab(id){tabs.forEach(([t,p])=>{const on=t===id;$(t).setAttribute('aria-selected',on);$(t).tabIndex=on?0:-1;$(p).hidden=!on})}
-tabs.forEach(([t],k)=>{$(t).onclick=()=>showTab(t);$(t).onkeydown=e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){const n=tabs[(k+1)%2][0];showTab(n);$(n).focus()}}});
-showTab('t-chat');
+// ---- centre of the screen: graph, or the dictation desk (the graph steps aside while you write)
+function showMode(dict){$('stage').hidden=dict;$('p-dict').hidden=!dict;
+  $('t-chat').setAttribute('aria-pressed',!dict);$('t-dict').setAttribute('aria-pressed',dict);
+  document.body.classList.toggle('dictating',dict);if(!dict)resize()}
+$('t-chat').onclick=()=>showMode(false);
+$('t-dict').onclick=()=>{showMode(true);$('rec').focus()};
 
 // ---- conversation (test mode: finds notes, no AI)
 const msgs=$('msgs');
@@ -153,7 +190,7 @@ function ask(q){
   const refs=el('div','refs');hits.forEach(i=>{const b=el('button','ref',N[i].t);b.type='button';b.onclick=()=>focusNode(i,false);refs.append(b)});
   m.append(refs);push(m);focusNode(hits[0],false)}
 $('f').addEventListener('submit',e=>{e.preventDefault();const q=$('q').value.trim();if(!q)return;$('q').value='';ask(q)});
-$('mic').onclick=()=>{showTab('t-dict');$('rec').focus()};
+$('mic').onclick=()=>{showMode(true);$('rec').focus()};
 ['O que mudou no Fatia-Ai?','Resumo do Auto-Trade','Notas de Salesforce'].forEach(t=>{const b=el('button','sg',t);b.type='button';b.onclick=()=>ask(t);$('sugg').append(b)});
 sys(`${N.length} notas do Cofre Principal carregadas. Neste protótipo eu só encontro as notas que usaria; o Claude ainda não está ligado.`);
 
@@ -165,24 +202,26 @@ const DEST=[
   ['inbox','Nova nota no Inbox','00-INB 📥 Inbox/_a-processar/Ditado '+fmt({day:'2-digit',month:'2-digit',year:'numeric'}).replaceAll('/','-')+'.md'],
 ];
 DEST.forEach(([v,l])=>{const o=el('option',null,l);o.value=v;$('dest').append(o)});
-const SAMPLE='hoje eu terminei o protótipo do jarvis no estilo painel limpo amanhã preciso testar o ollama na rx 580 e ver se o vulkan funciona e lembrar de comprar filamento petg preto';
-const SAMPLE_OUT=['- Terminei o protótipo do Jarvis no estilo painel limpo.','- Testar o Ollama na RX 580 e ver se o Vulkan funciona. #to-do','- Comprar filamento PETG preto. #to-do'];
-let recTimer=null;
+const SAMPLE='então hoje eu fechei o protótipo do jarvis no estilo filme e o painel limpo também ficou salvo no projeto o que eu achei é que o grafo precisava parecer mais vivo tipo as pastas orbitando em volta de um núcleo e quando eu for ditar o grafo tem que sair da frente pra eu ter espaço pra escrever ah e amanhã eu preciso testar o ollama na rx 580 ver se o vulkan funciona e qual modelo cabe nos oito giga de vram acho que um de sete ou oito bilhões de parâmetros e também lembrar de comprar filamento petg preto pro gabinete da impressora e responder o cliente da vitrine sobre o cupom vitrine cinco';
+const SAMPLE_OUT=['#### Jarvis','- Protótipo do HUD fechado nos dois estilos: filme e painel limpo, ambos salvos no projeto.','- O grafo precisa parecer mais vivo: pastas orbitando em volta de um núcleo.','- Ao ditar, o grafo sai da frente e o texto ganha o centro da tela.','','#### Próximos passos','- Testar o Ollama na RX 580 com Vulkan e ver qual modelo cabe nos 8 GB de VRAM (provável: 7 a 8 bilhões de parâmetros). #to-do','- Comprar filamento PETG preto para o gabinete da impressora. #to-do','- Responder o cliente da vitrine sobre o cupom VITRINE5. #to-do'];
+let recTimer=null,recStart=0;
 function stopRec(){clearInterval(recTimer);recTimer=null;$('rec').setAttribute('aria-pressed','false');$('rec').classList.remove('on');$('rec-l').textContent='Ditar'}
 $('rec').onclick=()=>{
   if(recTimer){stopRec();return}
-  $('rec').setAttribute('aria-pressed','true');$('rec').classList.add('on');$('rec-l').textContent='Parar';
+  $('rec').setAttribute('aria-pressed','true');$('rec').classList.add('on');$('rec-l').textContent='Parar';recStart=Date.now();
   $('dhint').textContent='Simulação: no navegador o microfone fica desligado, então escrevo uma fala de exemplo.';
   const words=SAMPLE.split(' ');let k=0;$('raw').value='';
-  recTimer=setInterval(()=>{$('raw').value+=(k?' ':'')+words[k++];if(k>=words.length)stopRec()},reduce.matches?0:110)};
+  recTimer=setInterval(()=>{$('raw').value+=(k?' ':'')+words[k++];$('raw').scrollTop=$('raw').scrollHeight;
+    const s=Math.round((Date.now()-recStart)/1000);$('rect').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+    if(k>=words.length)stopRec()},reduce.matches?0:90)};
 function tidy(raw){
   if(norm(raw)===norm(SAMPLE))return SAMPLE_OUT;
   // shortcut: sentence split stands in for the Ollama prompt; the real app sends raw text to the local model
   return raw.split(/(?<=[.!?])\s+|\n+/).map(s=>s.trim()).filter(Boolean).map(s=>'- '+s[0].toUpperCase()+s.slice(1)+(/[.!?]$/.test(s)?'':'.'))}
-$('tidy').onclick=()=>{const raw=$('raw').value.trim();if(!raw){$('dhint').textContent='Dite ou escreva algo antes de organizar.';$('raw').focus();return}
+$('tidy').onclick=()=>{if(recTimer){stopRec();$('raw').value=SAMPLE}const raw=$('raw').value.trim();if(!raw){$('dhint').textContent='Dite ou escreva algo antes de organizar.';$('raw').focus();return}
   ollamaUntil=Date.now()+4000;$('tidy').disabled=true;$('tidy').textContent='Organizando…';$('dhint').textContent='Ollama rodando na GPU, veja o painel Máquina.';
   setTimeout(()=>{const hora=fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-    $('out').value=`### ${hora} · ditado\n`+tidy(raw).join('\n');$('tidy').disabled=false;$('tidy').textContent='Organizar com Ollama';
+    $('out').value=`### ${hora} · ditado\n\n`+tidy(raw).join('\n');$('tidy').disabled=false;$('tidy').textContent='Organizar com Ollama';
     $('dhint').textContent='Revise o texto. Os itens com #to-do aparecem na sua lista de tarefas.'},reduce.matches?300:2200)};
 $('read').onclick=()=>{const t=($('out').value||$('raw').value).replace(/^#+\s.*$/m,'').replace(/[-#]|to-do/g,' ').trim();
   if(!t){$('dhint').textContent='Não há texto para ler.';return}
@@ -192,5 +231,11 @@ $('read').onclick=()=>{const t=($('out').value||$('raw').value).replace(/^#+\s.*
 $('save').onclick=()=>{if(!$('out').value.trim()){$('dhint').textContent='Organize o texto antes de salvar.';return}
   const d=DEST.find(x=>x[0]===$('dest').value);$('dhint').textContent=`No app do PC, isto entra no fim de ${d[2]}. Aqui no protótipo nada foi gravado.`};
 
+// orbit clock: stops while a note is in focus, while dictating, off-screen, or with reduced motion
+let last=performance.now();
+function orbitLoop(now){const dt=Math.min(.1,(now-last)/1000);last=now;
+  if(focus<0&&!drag&&!pinch&&!$('stage').hidden&&!document.hidden&&!reduce.matches){orbitT+=dt;place();if(!target)draw()}
+  requestAnimationFrame(orbitLoop)}
+if(ORBIT)requestAnimationFrame(orbitLoop);
 addEventListener('resize',()=>{resize();meterTick()});recolor();resize();
 document.fonts&&document.fonts.ready.then(()=>{resize();recolor()});

@@ -25,8 +25,7 @@
     <section class="sec"><h2>Inbox</h2><div class="chip" id="inbox"></div></section>
   </aside>
 
-  <main class="pane stage">
-    <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
+  <main class="pane stage" id="stage">
     <canvas id="g" role="img" aria-label="Grafo das notas do vault. Use a lista de projetos, as notas recentes ou a conversa para focar uma nota."></canvas>
     <div class="gtitle"><b>Cofre Principal</b><span id="gstats"></span></div>
     <div class="tools">
@@ -37,46 +36,49 @@
     <div class="legend" id="legend"></div>
   </main>
 
-  <section class="pane chat" aria-label="Conversa e ditado">
+  <section class="pane dictpane" id="p-dict" aria-label="Ditado" hidden>
+    <div class="dhead">
+      <div class="field">
+        <label for="dest">Escrever em</label>
+        <select id="dest" name="destino"></select>
+      </div>
+      <button class="rec" type="button" id="rec" aria-pressed="false"><span class="recdot" aria-hidden="true"></span><span id="rec-l">Ditar</span><span class="rect" id="rect">0:00</span></button>
+    </div>
+    <div class="dcols">
+      <div class="field grow">
+        <label for="raw">O que você falou <span class="note">whisper.cpp</span></label>
+        <textarea id="raw" name="transcricao" placeholder="Toque em Ditar e fale à vontade, ou escreva aqui…"></textarea>
+      </div>
+      <div class="field grow">
+        <label for="out">Como vai ficar na nota <span class="note">Ollama reescreve</span></label>
+        <textarea id="out" name="resultado" placeholder="O Ollama organiza e reescreve o que você falou, em Markdown. Você pode editar antes de salvar."></textarea>
+      </div>
+    </div>
+    <div class="dfoot">
+      <button type="button" class="ghost" id="tidy">Organizar com Ollama</button>
+      <button type="button" class="ghost" id="read">Ler em voz alta</button>
+      <span class="hint" id="dhint" aria-live="polite"></span>
+      <button type="button" class="send" id="save">Salvar na nota</button>
+    </div>
+  </section>
+
+  <section class="pane chat" aria-label="Conversa">
     <header>
-      <div class="tabs" role="tablist" aria-label="Modo">
-        <button role="tab" id="t-chat" aria-selected="true" aria-controls="p-chat">Conversa</button>
-        <button role="tab" id="t-dict" aria-selected="false" aria-controls="p-dict">Ditado</button>
+      <div class="tabs" role="group" aria-label="Centro da tela">
+        <button type="button" id="t-chat" aria-pressed="true">Grafo</button>
+        <button type="button" id="t-dict" aria-pressed="false">Ditado</button>
       </div>
       <small>modo teste · sem IA</small>
     </header>
-
-    <div class="panel" id="p-chat" role="tabpanel" aria-labelledby="t-chat">
+    <div class="panel" id="p-chat">
       <div class="msgs" id="msgs" aria-live="polite"></div>
       <div class="sugg" id="sugg"></div>
       <form id="f">
         <label class="sr" for="q">Mensagem para o Jarvis</label>
         <input id="q" name="mensagem" autocomplete="off" placeholder="Pergunte ao Jarvis…">
-        <button class="mic" type="button" id="mic" aria-label="Falar (disponível no app do PC)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="mic" type="button" id="mic" aria-label="Ditar uma nota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
         <button class="send" type="submit">Enviar</button>
       </form>
-    </div>
-
-    <div class="panel dict" id="p-dict" role="tabpanel" aria-labelledby="t-dict" hidden>
-      <div class="field">
-        <label for="dest">Escrever em</label>
-        <select id="dest" name="destino"></select>
-      </div>
-      <button class="rec" type="button" id="rec" aria-pressed="false"><span class="recdot" aria-hidden="true"></span><span id="rec-l">Ditar</span></button>
-      <div class="field grow">
-        <label for="raw">O que você falou <span class="note">whisper.cpp</span></label>
-        <textarea id="raw" name="transcricao" placeholder="Toque em Ditar ou escreva aqui…"></textarea>
-      </div>
-      <div class="row2">
-        <button type="button" class="ghost" id="tidy">Organizar com Ollama</button>
-        <button type="button" class="ghost" id="read">Ler em voz alta</button>
-      </div>
-      <div class="field grow">
-        <label for="out">Como vai ficar na nota <span class="note">Ollama</span></label>
-        <textarea id="out" name="resultado" placeholder="O texto organizado aparece aqui, já em Markdown."></textarea>
-      </div>
-      <button type="button" class="send wide" id="save">Salvar na nota</button>
-      <div class="hint" id="dhint" aria-live="polite"></div>
     </div>
   </section>
 </div>
