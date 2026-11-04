@@ -92,7 +92,7 @@ def transcribe_local(audio, mime="audio/webm"):
            "audio/mpeg": ".mp3", "audio/wav": ".wav"}.get(mime.split(";")[0], ".webm")
     with tempfile.TemporaryDirectory() as tmp:
         raw = os.path.join(tmp, "turn" + ext)
-        wav = os.path.join(tmp, "turn.wav")
+        wav = os.path.join(tmp, "turn-16k.wav")
         with open(raw, "wb") as fh:
             fh.write(audio)
         conv = subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", raw,
@@ -101,7 +101,7 @@ def transcribe_local(audio, mime="audio/webm"):
         if conv.returncode != 0 or not os.path.exists(wav):
             raise RuntimeError(f"audio convert failed: {(conv.stderr or '')[:160]}")
         out = subprocess.run([WHISPER_BIN, "-m", model, "-f", wav, "-nt", "-np",
-                              "-t", "4", "-sns",
+                              "-t", os.environ.get("WHISPER_THREADS", "14"), "-sns",
                               "-l", os.environ.get("WHISPER_LANG", "auto")],
                              capture_output=True, text=True, timeout=180)
         if out.returncode != 0:

@@ -6,13 +6,21 @@ import urllib.request
 
 import sysinfo
 
-MODEL = os.environ.get("JARVIS_OLLAMA_MODEL", "llama3.2:3b")
+MODEL = os.environ.get("JARVIS_OLLAMA_MODEL", "gemma3:4b")
 PROMPT = """Você organiza anotações ditadas em português para uma nota diária do Obsidian.
 Reescreva o texto abaixo em Markdown limpo:
 - Corrija pontuação e maiúsculas; não invente nada que não foi dito.
 - Agrupe por assunto com títulos "## Assunto" curtos.
-- Coisas a fazer viram "- [ ] tarefa #to-do".
+- O que já foi feito ou aconteceu vira item simples: "- Terminei X."
+- Só o que ainda precisa ser feito vira tarefa, sempre com a tag no fim: "- [ ] Fazer Y #to-do"
 - Responda só com o Markdown, sem comentários.
+
+Exemplo
+Ditado: hoje eu arrumei a impressora amanhã preciso trocar o bico
+Saída:
+## Impressora
+- Arrumei a impressora.
+- [ ] Trocar o bico #to-do
 
 Texto ditado:
 """
