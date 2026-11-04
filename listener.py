@@ -9,6 +9,7 @@ import io
 import json
 import math
 import os
+import pathlib
 import queue
 import re
 import shlex
@@ -237,6 +238,12 @@ class Ear:
                 self.emit(dict(t="state", v=self.state()))
 
     def _handle(self, mode, pcm):
+        if DEBUG:   # keep the last 30 clips in RAM (tmpfs, gone at reboot) to compare speech models on the real voice
+            d = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "fedora-ouvido"
+            d.mkdir(mode=0o700, exist_ok=True)
+            (d / time.strftime(f"%H%M%S-{mode}.wav")).write_bytes(_wav(pcm))
+            for old in sorted(d.glob("*.wav"))[:-30]:
+                old.unlink()
         if mode == "wake":
             heard = whisper(STT_URL, pcm, timeout=30)
             rest = strip_wake(heard)
