@@ -11,6 +11,7 @@ import json
 import mimetypes
 import os
 import pathlib
+import queue
 import secrets
 import sys
 import threading
@@ -31,6 +32,7 @@ if _env.exists():
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 import commands    # noqa: E402
+import listener    # noqa: E402
 import memory      # noqa: E402
 import notes       # noqa: E402
 import runtime     # noqa: E402
@@ -100,7 +102,11 @@ class Handler(BaseHTTPRequestHandler):
                 links=len(g["links"]), voice=voice.describe(),
                 listener=voice.describe_stt(), stt=voice.stt_kind(),
                 server_stt=voice.stt_kind() in ("whisper", "fish"),
-                server_voice=voice.available(), session=SESSION["id"]))
+                server_voice=voice.available(), session=SESSION["id"],
+                ear=listener.EAR.state(), ear_error=listener.EAR.error))
+
+        if p == "/api/events":
+            return self._events()
 
         if p == "/api/system":
             return self._json(sysinfo.snapshot())
@@ -145,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok():
             return self._json({"error": "unauthorized"}, 401)
         ctype = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        if p in {"/api/run", "/api/speak", "/api/new", "/api/cancel", "/api/daily/save", "/api/tidy"} and ctype != "application/json":
+        if p in {"/api/run", "/api/speak", "/api/new", "/api/cancel", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
             return self._json({"error": "application/json required"}, 415)
         try:
             raw = self._read(MAX_AUDIO if p == "/api/listen" else MAX_JSON)
@@ -164,6 +170,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": voice.transcribe(raw, self.headers.get("Content-Type", "audio/webm"))})
             except Exception as e:  # noqa: BLE001
                 return self._json({"error": str(e)[:400], "text": ""}, 503)
+
+        if p == "/api/ear":
+            action = str(json.loads(raw or b"{}").get("action", ""))
+            if action not in {"on", "off", "listen", "dictate", "stop"}:
+                return self._json({"error": "ação desconhecida"}, 400)
+            return self._json({"state": listener.EAR.control(action)})
 
         if p == "/api/daily/save":
             try:
@@ -202,6 +214,28 @@ class Handler(BaseHTTPRequestHandler):
                 RUN_LOCK.release()
 
         return self._json({"error": "no such endpoint"}, 404)
+
+    def _events(self):
+        """Server-Sent Events: what the ear hears, for as long as the page is open."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        q = listener.EAR.subscribe()
+        try:
+            while True:
+                try:
+                    ev = q.get(timeout=15)
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            listener.EAR.unsubscribe(q)
+        self.close_connection = True
 
     def _stream(self, raw):
         try:
@@ -272,7 +306,7 @@ def main():
     brain = (f"Claude Code {runtime.version()} — your subscription, no API key"
              if kind == "claude" else "MOCK — claude CLI not reachable")
     print(f"""
-  JARVIS · Claude Code Memory HUD
+  FEDORA · assistente local (diga “Ok, Fedora”)
   ────────────────────────────────────────────────
   brain        {brain}
   model        {runtime.MODEL or 'Claude default'}
@@ -284,6 +318,9 @@ def main():
   open         http://localhost:{PORT}
 """, flush=True)
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv.daemon_threads = True
+    if os.environ.get("FEDORA_EAR", "1") != "0":
+        listener.EAR.start()
     if os.environ.get("JARVIS_OPEN", "1") != "0":
         webbrowser.open(f"http://localhost:{PORT}")
     try:

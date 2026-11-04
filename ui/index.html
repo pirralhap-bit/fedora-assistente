@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Jarvis</title>
+<title>Fedora</title>
 <meta name="theme-color" content="#030305">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -97,9 +97,9 @@ body[data-v="think"] .state i{background:var(--cool)}
 </head>
 <body>
 
-<section id="home" aria-label="Jarvis">
+<section id="home" aria-label="Fedora">
   <canvas id="sky" aria-hidden="true"></canvas>
-  <canvas id="hole" role="button" tabindex="0" aria-label="Buraco negro do Jarvis. Toque ou aperte Espaço para falar."></canvas>
+  <canvas id="hole" role="button" tabindex="0" aria-label="Buraco negro da Fedora. Toque ou aperte Espaço para falar sem dizer o nome."></canvas>
   <div class="proto" id="status">conectando…</div>
   <div id="orbits" aria-label="Sistema e vault"></div>
   <div class="voice">
@@ -117,7 +117,7 @@ body[data-v="think"] .state i{background:var(--cool)}
 
 <section id="notes" aria-label="Notas diárias" hidden>
   <header class="nhead">
-    <a class="back" id="back" href="#">← Jarvis</a>
+    <a class="back" id="back" href="#">← Fedora</a>
     <h1 id="n-title">Hoje</h1>
     <span class="npath" id="n-path"></span>
   </header>
@@ -240,57 +240,47 @@ function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
 async function refreshSystem(){try{S=await api('/api/system')}catch{}fillOrbit()}
 async function refreshVault(){try{V=await api('/api/vault')}catch{}fillOrbit()}
 refreshSystem();refreshVault();setInterval(refreshSystem,2000);setInterval(refreshVault,60000);
-api('/api/status').then(s=>{
+const ear=action=>api('/api/ear',{action}).catch(e=>say(errMsg(e)));
+function showStatus(){api('/api/status').then(s=>{
   const brain=s.runtime==='claude'?'Claude conectado':'Claude indisponível';
-  const ear=s.stt==='whisper'?'voz: whisper local':'voz: whisper.cpp não instalado';
-  $('status').textContent=`${brain} · ${ear}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e));
-
-// ================= microphone: record until you stop talking =================
-let mic=null,recording=null;
-async function getMic(){if(mic)return mic;
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
-  const ctx=new AudioContext(),an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
-  return mic={stream,ctx,an,buf:new Float32Array(an.fftSize)}}
-function rms(){mic.an.getFloatTimeDomainData(mic.buf);let s=0;for(const v of mic.buf)s+=v*v;return Math.sqrt(s/mic.buf.length)}
-async function record({silence=1300,max=15000}={}){
-  const m=await getMic();if(m.ctx.state==='suspended')await m.ctx.resume();
-  const rec=new MediaRecorder(m.stream),chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-  return new Promise(res=>{const start=performance.now();let spoke=false,quiet=start,floor=0,n=0;
-    rec.onstop=()=>{recording=null;res(new Blob(chunks,{type:rec.mimeType||'audio/webm'}))};
-    recording={stop:()=>rec.state!=='inactive'&&rec.stop()};rec.start(250);
-    const tick=()=>{if(rec.state==='inactive')return;const lv=rms(),now=performance.now();
-      if(now-start<300){floor=(floor*n+lv)/++n}// first 300 ms: measure the room
-      const thr=Math.max(.012,floor*3);hole.goal=mini.goal=Math.min(1,.25+lv*10);
-      if(lv>thr){spoke=true;quiet=now}
-      if((spoke&&now-quiet>silence)||now-start>max)rec.stop();else requestAnimationFrame(tick)};
-    tick()})}
-async function transcribe(blob){
-  const r=await fetch('/api/listen',{method:'POST',headers:{'Content-Type':(blob.type||'audio/webm').split(';')[0],'X-Jarvis-Token':TOKEN},body:blob});
-  const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||'falha na transcrição');return(j.text||'').trim()}
+  const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'diga “Ok, Fedora”';
+  $('status').textContent=`${brain} · ${voice}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e))}
+showStatus();
 function speak(text){if(!('speechSynthesis' in window)||vs==='mute'||!text)return;speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';const v=speechSynthesis.getVoices().find(v=>v.lang.startsWith('pt'));if(v)u.voice=v;speechSynthesis.speak(u)}
 
-// ================= voice turn on the home screen =================
-let vs='idle',busy=false;
-const STATES={idle:'Toque ou aperte Espaço para falar',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
+// ================= voice: the server listens (PipeWire + whisper), the page only shows it =================
+let vs='idle',busy=false,level=0;
+const STATES={idle:'Diga “Ok, Fedora”',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
 function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
-  hole.goal=mini.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=s==='think'?2.2:1}
+  hole.goal=mini.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=s==='think'?2.2:1;
+  $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
+  const d=s==='dict';$('dictate').setAttribute('aria-pressed',d);$('dictate').textContent=d?'Parar':'Ditar'}
 const say=t=>{$('reply').textContent=t};
-async function listenTurn(){
-  if(recording){recording.stop();return}
-  if(busy||vs==='mute')return;busy=true;
-  try{setV('listen');$('heard').textContent='';say('');speechSynthesis&&speechSynthesis.cancel();
-    const blob=await record();setV('think');const text=await transcribe(blob);
-    if(!text){say('Não ouvi nada. Tente de novo.');return}
-    $('heard').textContent=text;await command(text)}
-  catch(e){say(errMsg(e))}finally{busy=false;if(vs==='listen'||vs==='think')setV('idle')}}
+function connect(){const es=new EventSource('/api/events');
+  es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data)}catch{return}
+    if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=Math.min(1,.3+ev.v*2.5)}
+    else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}
+    else if(ev.t==='wake'){speechSynthesis&&speechSynthesis.cancel();$('heard').textContent='';say('');setV('listen')}
+    else if(ev.t==='command'){if(!ev.text){say('Não entendi. Diga “Ok, Fedora” e o pedido.');return}$('heard').textContent=ev.text;run(ev.text)}
+    else if(ev.t==='dictation')insertDictation(ev.text)
+    else if(ev.t==='error'){say(ev.message);hint(ev.message)}};
+  es.onerror=()=>{$('status').textContent='servidor desconectado · tentando de novo…';es.close();setTimeout(()=>{connect();showStatus()},3000)}}
+connect();
+function run(text){if(busy)return;busy=true;command(text).finally(()=>{busy=false})}
 async function command(raw){
-  const text=raw.replace(/^\s*jarvis[\s,.!:]*/i,'').trim(),t=norm(text);
+  const text=raw.replace(/^\s*(ok,?\s*)?fedora[\s,.!:]*/i,'').trim(),t=norm(text);
   if(!text)return say('Pode falar.');
-  if(/^(abr\w* )?(as |minhas )?notas? diaria|^daily|^diario/.test(t)){say('Abrindo as notas diárias.');location.hash='notas';return}
+  if(/nota\w* diari|^daily|^diario/.test(t)){say('Abrindo as notas diárias.');location.hash='notas';return}
+  if(!$('notes').hidden){// editor voice commands
+    if(/^dit/.test(t))return dictate();
+    if(/^organiz/.test(t))return tidyText();
+    if(/^salv/.test(t))return saveNote();
+    if(/^(volt|inicio|sair)/.test(t)){location.hash='';return}}
+  if(/^(desfaz)/.test(t)&&!$('undo').disabled)return $('undo').click();
   await askClaude(text)}
 async function askClaude(text){
-  setV('think');let out='';
+  setV('think');let out='';if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
   try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify({message:text})});
     if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'o Claude não respondeu')}
     const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
@@ -300,18 +290,16 @@ async function askClaude(text){
         if(ev.t==='delta'){out+=ev.text;say(out)}
         else if(ev.t==='error'){say(ev.message)}
         else if(ev.t==='tool'&&ev.phase==='use'){$('state-t').textContent='Usando '+ev.name}}}
-    speak(out)}
+    if(!$('notes').hidden)hint(out);speak(out)}
   catch(e){say(errMsg(e))}finally{setV('idle')}}
-$('hole').addEventListener('click',listenTurn);
-$('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();listenTurn()}});
-addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();listenTurn()}});
-$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v||busy)return;$('cmd').value='';$('heard').textContent=v;
-  busy=true;command(v).finally(()=>busy=false)});
-$('mute').onclick=()=>{const off=vs!=='mute';if(off&&vs!=='idle')return;
-  if(off&&mic){mic.stream.getTracks().forEach(t=>t.stop());mic.ctx.close();mic=null}// really release the device
-  setV(off?'mute':'idle');$('mute').setAttribute('aria-pressed',off);$('mute').textContent=off?'mic desligado':'mic ligado'};
+const tap=()=>{if(vs==='listen'||vs==='dict')ear('stop');else if(vs==='idle')ear('listen')};
+$('hole').addEventListener('click',tap);
+$('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
+addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();tap()}});
+$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v||busy)return;$('cmd').value='';$('heard').textContent=v;run(v)});
+$('mute').onclick=()=>ear(vs==='mute'?'on':'off');
 ['notas diárias','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
-  b.onclick=()=>{if(busy)return;$('heard').textContent=c;busy=true;command(c).finally(()=>busy=false)};$('cmds').append(b)});
+  b.onclick=()=>{$('heard').textContent=c;run(c)};$('cmds').append(b)});
 
 // ================= daily notes =================
 let list=[],note=null,saved='',prevText=null,dictRange=null;
@@ -327,22 +315,20 @@ async function openNote(id){
   const n=list.find(x=>x.id===id);const d=n&&n.today?fmt({weekday:'long',day:'numeric',month:'long'}):(n?n.name.replace(/^(\d+) - (.*)$/,'$2, $1'):id);
   $('n-title').textContent=d.replace(/^./,c=>c.toUpperCase());$('n-path').textContent=note.path+(note.mtime?'':' · nova');
   [...$('days').children].forEach(b=>b.setAttribute('aria-current',b.dataset.id===id));
-  hint(note.mtime?'Clique no buraco negro para ditar. Ctrl+S salva.':'Esta nota ainda não existe; ela é criada ao salvar.')}
+  hint(note.mtime?'Diga “Ok, Fedora, ditar” ou clique no buraco negro. Ctrl+S salva.':'Esta nota ainda não existe; ela é criada ao salvar.')}
 async function saveNote(){if(!note)return;
   try{const r=await api('/api/daily/save',{id:note.id,text:ta.value,mtime:note.mtime});note.mtime=r.mtime;saved=ta.value;hint('Salvo em '+note.path+'.')}
   catch(e){hint(e.status===409?'A nota mudou fora daqui (Obsidian?). Copie seu texto, reabra a nota e cole de novo.':'Não salvou: '+errMsg(e))}}
-async function dictate(){
-  if(recording){recording.stop();return}
-  if(vs==='mute')return hint('O microfone está desligado na tela principal.');
-  if(busy)return;busy=true;$('dictate').setAttribute('aria-pressed','true');$('dictate').textContent='Parar';
-  try{setV('dict');hint('Ditando. Fique 3 segundos em silêncio ou clique de novo para terminar.');
-    const blob=await record({silence:3000,max:10*60*1000});setV('think');hint('Transcrevendo…');
-    const text=await transcribe(blob);if(!text){hint('Não ouvi nada.');return}
-    const s=ta.selectionStart,lead=s>0&&!/\s$/.test(ta.value.slice(0,s))?' ':'';
-    ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
-    ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. “Ollama: organizar” reescreve só esse trecho.')}
-  catch(e){hint(errMsg(e))}
-  finally{busy=false;setV('idle');$('dictate').setAttribute('aria-pressed','false');$('dictate').textContent='Ditar'}}
+function dictate(){
+  if(vs==='dict')return ear('stop');
+  if(vs==='mute')return hint('O microfone está desligado.');
+  if(vs!=='idle')return;ear('dictate');hint('Pode ditar. Fique 3 segundos em silêncio ou clique em Parar para terminar.')}
+function insertDictation(text){
+  if($('notes').hidden){location.hash='notas'}
+  if(!text)return hint('Não ouvi nada.');
+  const s=ta.selectionStart,lead=s>0&&!/\s$/.test(ta.value.slice(0,s))?' ':'';
+  ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
+  ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Diga “Ok, Fedora, organizar” ou clique em “Ollama: organizar”.')}
 async function tidyText(){
   let[s,e]=ta.selectionStart!==ta.selectionEnd?[ta.selectionStart,ta.selectionEnd]:dictRange||[0,0];
   const part=ta.value.slice(s,e).trim();if(!part)return hint('Selecione um trecho ou dite algo antes de organizar.');
@@ -359,7 +345,7 @@ $('back').addEventListener('click',e=>{if(dirty()&&!confirm('Há alterações n�
 
 // ================= routing + loop =================
 async function route(){const notes=location.hash==='#notas';$('home').hidden=notes;$('notes').hidden=!notes;
-  document.title=notes?'Jarvis · Notas diárias':'Jarvis';
+  document.title=notes?'Fedora · Notas diárias':'Fedora';
   if(notes){mini.resize();try{await loadList();if(!note)await openNote(list.find(n=>n.today).id)}catch(e){hint(errMsg(e))}ta.focus()}
   else{hole.resize();stars($('sky'))}}
 addEventListener('hashchange',route);
