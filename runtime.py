@@ -26,7 +26,14 @@ WORKDIR = os.path.expanduser(os.environ.get("JARVIS_WORKDIR", os.getcwd()))
 # prompt, so any gated tool (MCP connectors, web search) would silently fail
 # otherwise. This also lets JARVIS take unattended actions (send/delete/shell) —
 # see the Security notes in README. Set JARVIS_PERMISSION=acceptEdits to narrow it.
-PERMISSION = os.environ.get("JARVIS_PERMISSION", "default").strip()
+PERMISSION = os.environ.get("JARVIS_PERMISSION", "bypassPermissions").strip()
+# Deny rules still hold under bypassPermissions (tested). The mic is always open, so a
+# misheard phrase must never power the PC off or delete for good (trash is undoable).
+DENY = ["Bash(shutdown:*)", "Bash(poweroff:*)", "Bash(reboot:*)", "Bash(halt:*)",
+        "Bash(systemctl poweroff:*)", "Bash(systemctl reboot:*)", "Bash(systemctl halt:*)",
+        "Bash(systemctl suspend:*)", "Bash(systemctl hibernate:*)", "Bash(loginctl poweroff:*)",
+        "Bash(loginctl reboot:*)", "Bash(rm:*)", "Bash(shred:*)",
+        "Bash(mkfs:*)", "Bash(dd:*)"]
 RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
 RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "").strip()
@@ -109,6 +116,7 @@ def build_command(message, session_id=None, system=None):
         cmd += ["--model", MODEL]
     if PERMISSION:
         cmd += ["--permission-mode", PERMISSION]
+    cmd += ["--disallowedTools", *DENY]
     if system:
         cmd += ["--append-system-prompt", system]
     return cmd
