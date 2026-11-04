@@ -1,122 +1,374 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="jarvis-token" content="__JARVIS_TOKEN__">
-<title>JARVIS · Claude Code</title>
-<link rel="stylesheet" href="styles.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jarvis</title>
+<meta name="theme-color" content="#030305">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap">
+<style>
+/* Layout: one dark sky. A black hole in the centre listens; system data drifts on its left orbit, vault data on its right. No boxes.
+   #notas swaps to a quiet writing page with a small hole that still listens. Single deliberate dark theme. */
+:root{
+  --space:#030305; --ink:#ece6dc; --dim:#8a8378; --faint:#4a463f; --hot:#ffb15c; --white-hot:#fff1d6; --cool:#8fb4ff; --warn:#ff8a5c;
+  --ui:"Manrope",system-ui,sans-serif; --data:"JetBrains Mono",ui-monospace,monospace; --write:"Literata",Georgia,serif;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--space);color:var(--ink);font:400 15px/1.5 var(--ui);overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+:focus-visible{outline:1px solid var(--hot);outline-offset:4px}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- home: the black hole ---------- */
+#home{position:fixed;inset:0}
+#sky,#hole{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hole{cursor:pointer}
+.orbit{position:absolute;left:0;top:0;display:grid;gap:1px;white-space:nowrap;pointer-events:none;will-change:transform}
+.orbit .k{font:300 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.orbit .v{font:300 22px var(--ui);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.orbit .s{font:300 11px var(--data);color:var(--faint)}
+.orbit.left{text-align:right}
+.orbit .v.hot{color:var(--warn)}
+.voice{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  width:min(640px,calc(100% - 32px));display:grid;gap:10px;justify-items:center;text-align:center}
+.state{font:400 11px var(--data);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;gap:10px;align-items:center}
+.state i{width:6px;height:6px;border-radius:50%;background:var(--faint);transition:background-color .3s}
+body[data-v="listen"] .state i,body[data-v="dict"] .state i{background:var(--hot);box-shadow:0 0 10px var(--hot)}
+body[data-v="think"] .state i{background:var(--cool)}
+.heard{font:300 26px/1.3 var(--ui);min-height:1.3em;color:var(--ink);text-wrap:balance}
+.reply{font-size:14px;color:var(--dim);min-height:1.5em;max-width:56ch;text-wrap:pretty}
+.cmds{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;font-size:13px}
+.cmd{background:none;border:0;padding:4px 0;color:var(--dim);border-bottom:1px solid transparent}
+.cmd:hover{color:var(--ink);border-bottom-color:var(--faint)}
+.typed{display:flex;gap:14px;align-items:center;width:min(420px,100%)}
+.typed input{flex:1;min-width:0;background:none;border:0;border-bottom:1px solid var(--faint);padding:6px 2px;font-size:14px;text-align:center}
+.typed input:focus-visible{outline:none;border-bottom-color:var(--hot)}
+.typed input::placeholder{color:var(--faint)}
+.mute{background:none;border:0;font:400 11px var(--data);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:4px 0}
+.mute:hover{color:var(--ink)}
+.mute[aria-pressed="true"]{color:var(--warn)}
+.proto{max-width:calc(100% - 32px);text-align:center;position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font:400 10px var(--data);letter-spacing:.24em;text-transform:uppercase;color:var(--faint)}
+
+/* ---------- #notas: the writing page ---------- */
+#notes{position:fixed;inset:0;display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 1fr auto;
+  padding-block:20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));column-gap:32px}
+.nhead{grid-column:1/-1;display:flex;align-items:baseline;gap:20px;padding-bottom:18px}
+.back{color:var(--dim);text-decoration:none;font-size:13px}
+.back:hover{color:var(--ink)}
+.nhead h1{margin:0;font:500 24px var(--write);letter-spacing:-.01em}
+.npath{font:300 11px var(--data);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.days{overflow-y:auto;display:grid;align-content:start;gap:2px;padding-right:8px}
+.days h2{margin:0 0 8px;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.day{background:none;border:0;text-align:left;padding:5px 0;color:var(--dim);font-size:14px}
+.day:hover{color:var(--ink)}
+.day[aria-current="true"]{color:var(--hot)}
+.page{min-width:0;min-height:0;display:flex;justify-content:center}
+#text{width:min(72ch,100%);height:100%;resize:none;background:none;border:0;padding:0 0 40px;
+  font:400 19px/1.75 var(--write);color:var(--ink);caret-color:var(--hot)}
+#text:focus-visible{outline:none}
+#text::placeholder{color:var(--faint)}
+.nfoot{grid-column:1/-1;display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding-top:14px;border-top:1px solid #15140f}
+#mini{width:52px;height:52px;flex:none;cursor:pointer}
+.nstate{display:grid;min-width:0;flex:1 1 220px}
+.nstate b{font:400 11px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:400}
+.nstate span{font-size:13px;color:var(--faint)}
+.act{background:none;border:0;padding:6px 0;font-size:14px;color:var(--dim);border-bottom:1px solid transparent}
+.act:hover{color:var(--ink);border-bottom-color:var(--faint)}
+.act.primary{color:var(--hot)}
+.act:disabled{opacity:.4;cursor:default;border-color:transparent}
+.act[aria-pressed="true"]{color:var(--warn)}
+
+@media (max-width:760px){
+  body{overflow:auto}
+  #notes{position:static;min-height:100%;grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}
+  .days{display:flex;overflow-x:auto;gap:16px;padding-bottom:10px}.days h2{display:none}.day{white-space:nowrap}
+  #text{min-height:55vh;font-size:17px}
+  .heard{font-size:20px}
+  .orbit .s{display:none}.orbit .v{font-size:17px;max-width:calc(50vw - 28px);overflow:hidden;text-overflow:ellipsis}.orbit.left{text-align:left}
+  .voice{gap:6px}.reply:empty{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
 </head>
-<body class="boot">
+<body>
 
-<header class="topbar">
-  <div class="brand">
-    <div class="reactor-mini"><span></span></div>
-    <div class="brandtext">
-      <div class="eyebrow">Claude Code Direct Channel</div>
-      <h1>JARVIS</h1>
-    </div>
-    <span class="demo-badge" id="demoBadge">DEMO</span>
+<section id="home" aria-label="Jarvis">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <canvas id="hole" role="button" tabindex="0" aria-label="Buraco negro do Jarvis. Toque ou aperte Espaço para falar."></canvas>
+  <div class="proto" id="status">conectando…</div>
+  <div id="orbits" aria-label="Sistema e vault"></div>
+  <div class="voice">
+    <div class="state" id="state"><i aria-hidden="true"></i><span id="state-t">Toque ou aperte Espaço para falar</span></div>
+    <div class="heard" id="heard" aria-live="polite"></div>
+    <div class="reply" id="reply" aria-live="polite"></div>
+    <div class="cmds" id="cmds"></div>
+    <form class="typed" id="typed">
+      <label class="sr" for="cmd">Comando</label>
+      <input id="cmd" name="comando" autocomplete="off" placeholder="ou digite um comando…">
+      <button type="button" class="mute" id="mute" aria-pressed="false">mic ligado</button>
+    </form>
   </div>
-  <div class="pills">
-    <div class="pill"><i class="dot ok"></i><span>Gateway</span><b id="pGateway">booting</b></div>
-    <div class="pill"><i class="dot ok"></i><span>Brain</span><b id="pBrain">Claude CLI</b></div>
-    <div class="pill"><i class="dot warn"></i><span>Voice</span><b id="pVoice">browser</b></div>
+</section>
+
+<section id="notes" aria-label="Notas diárias" hidden>
+  <header class="nhead">
+    <a class="back" id="back" href="#">← Jarvis</a>
+    <h1 id="n-title">Hoje</h1>
+    <span class="npath" id="n-path"></span>
+  </header>
+  <nav class="days" aria-label="Notas diárias recentes"><h2>Diárias</h2><div id="days" style="display:contents"></div></nav>
+  <div class="page">
+    <label class="sr" for="text">Texto da nota</label>
+    <textarea id="text" name="nota" spellcheck="true" placeholder="Escreva, ou clique no buraco negro para ditar…"></textarea>
   </div>
-</header>
+  <footer class="nfoot">
+    <canvas id="mini" role="button" tabindex="0" aria-label="Ditar"></canvas>
+    <div class="nstate"><b id="n-state"></b><span id="n-hint"></span></div>
+    <button type="button" class="act" id="dictate" aria-pressed="false">Ditar</button>
+    <button type="button" class="act" id="tidy">Ollama: organizar</button>
+    <button type="button" class="act" id="undo" disabled>Desfazer</button>
+    <button type="button" class="act primary" id="save">Salvar</button>
+  </footer>
+</section>
 
-<main class="grid">
+<script>
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+const tz='America/Sao_Paulo';
+const fmt=(o,d=new Date())=>new Intl.DateTimeFormat('pt-BR',{timeZone:tz,...o}).format(d);
+const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const wait=ms=>new Promise(r=>setTimeout(r,reduce.matches?Math.min(ms,120):ms));
 
-  <!-- ── left rail ─────────────────────────────── -->
-  <aside class="rail left">
-    <section class="panel">
-      <h2>Inspector</h2>
-      <div id="inspector" class="inspector">
-        <p class="hint">Click a node to focus it — only that node and its connections
-        light up, and you can read its note here. Shift-click a second node to trace the path.</p>
-      </div>
-    </section>
+// ================= black hole renderer (shared by the home and the editor) =================
+class Hole{
+  constructor(cv,{count=1600,scale=1,stars=false}={}){this.cv=cv;this.cx=cv.getContext('2d');this.scale=scale;this.level=.1;this.goal=.1;this.spin=1;this.t=0;
+    this.p=Array.from({length:count},()=>{const r=1.35+Math.pow(Math.random(),1.6)*2.1;return{r,a:Math.random()*Math.PI*2,z:(Math.random()-.5)*.08*r,s:.6+Math.random()*1.4,k:Math.random()}});
+    this.resize()}
+  resize(){const d=devicePixelRatio||1,w=this.cv.clientWidth,h=this.cv.clientHeight;this.w=w;this.h=h;this.cv.width=w*d;this.cv.height=h*d;this.cx.setTransform(d,0,0,d,0,0);
+    const narrow=this.scale===1&&w<760;this.R=Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.scale>1?h/2:h*(narrow?.2:.44)}
+  col(r,alpha){const t=Math.max(0,Math.min(1,(r-1.35)/2.1));// hot white inside, amber, then deep red outside
+    const c=t<.25?[255,241,214]:t<.6?[255,177,92]:[214,92,52];return`rgba(${c[0]},${c[1]},${c[2]},${alpha})`}
+  frame(dt){
+    this.level+=(this.goal-this.level)*Math.min(1,dt*6);const L=this.level;this.t+=dt;
+    const{cx,R,X,Y}=this,tilt=.24,speed=(.25+L*1.6)*this.spin;
+    cx.clearRect(0,0,this.w,this.h);
+    // outer glow
+    let g=cx.createRadialGradient(X,Y,R*.9,X,Y,R*(4.2+L));g.addColorStop(0,`rgba(255,160,80,${.10+L*.18})`);g.addColorStop(1,'rgba(255,120,60,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(X,Y,R*(4.2+L),0,Math.PI*2);cx.fill();
+    const TAU=Math.PI*2,band=(clipFront)=>{cx.save();if(clipFront){cx.beginPath();cx.rect(0,Y,this.w,this.h);cx.clip();cx.beginPath();cx.arc(X,Y,R*1.01,0,TAU);cx.clip()}
+      cx.translate(X,Y);cx.scale(1,tilt);const b=cx.createRadialGradient(0,0,R*1.2,0,0,R*3.6);
+      b.addColorStop(0,'rgba(255,236,200,0)');b.addColorStop(.08,`rgba(255,214,150,${.5+L*.35})`);b.addColorStop(.35,`rgba(255,150,70,${.22+L*.2})`);b.addColorStop(1,'rgba(200,70,40,0)');
+      cx.fillStyle=b;cx.beginPath();cx.arc(0,0,R*3.6,0,TAU);cx.arc(0,0,R*1.2,0,TAU,true);cx.fill();cx.restore()};
+    cx.globalCompositeOperation='lighter';band(false);
+    // light from the far side of the disk, bent over the top of the shadow
+    const lg=cx.createRadialGradient(X,Y,R*1.02,X,Y,R*1.55);lg.addColorStop(0,`rgba(255,236,200,${.55+L*.35})`);lg.addColorStop(.3,`rgba(255,180,100,${.25+L*.2})`);lg.addColorStop(1,'rgba(255,140,60,0)');
+    cx.fillStyle=lg;cx.beginPath();cx.ellipse(X,Y,R*1.55,R*1.55,0,Math.PI,TAU);cx.ellipse(X,Y,R*1.02,R*1.02,0,TAU,Math.PI,true);cx.fill();
+    const back=[],front=[];
+    for(const q of this.p){if(!reduce.matches)q.a+=dt*speed*Math.pow(q.r,-1.5)*2.2;
+      const sn=Math.sin(q.a);(sn<0?back:front).push(q)}
+    const dot=(x,y,s,c)=>{cx.fillStyle=c;cx.fillRect(x-s/2,y-s/2,s,s)};
+    const bright=.35+L*.5;
+    for(const q of back){const x=X+Math.cos(q.a)*q.r*R,y=Y+Math.sin(q.a)*q.r*R*tilt+q.z*R;dot(x,y,q.s,this.col(q.r,bright*(.5+.5*q.k)));
+      // lensed image of the far side, bent over the top of the shadow
+      const rr=R*(1.06+(q.r-1.35)*.16);const lx=X+Math.cos(q.a)*rr,ly=Y+Math.sin(q.a)*rr;dot(lx,ly,q.s*.8,this.col(q.r,bright*.55*q.k))}
+    cx.globalCompositeOperation='source-over';
+    // shadow + photon ring
+    const pr=R*(1+L*.04+Math.sin(this.t*2)*.004);
+    cx.fillStyle='#000';cx.beginPath();cx.arc(X,Y,pr,0,TAU);cx.fill();
+    g=cx.createRadialGradient(X,Y,pr*.96,X,Y,pr*1.12);g.addColorStop(0,'rgba(255,241,214,0)');g.addColorStop(.35,`rgba(255,226,180,${.55+L*.4})`);g.addColorStop(1,'rgba(255,170,90,0)');
+    cx.fillStyle=g;cx.beginPath();cx.arc(X,Y,pr*1.12,0,TAU);cx.arc(X,Y,pr*.96,0,TAU,true);cx.fill();
+    cx.globalCompositeOperation='lighter';band(true);
+    for(const q of front){const x=X+Math.cos(q.a)*q.r*R,y=Y+Math.sin(q.a)*q.r*R*tilt+q.z*R;if(Math.hypot(x-X,y-Y)<pr*.98&&y<Y)continue;
+      dot(x,y,q.s*1.1,this.col(q.r,bright*(.6+.4*q.k)))}
+    cx.globalCompositeOperation='source-over'}
+}
+function stars(cv){const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*d;cv.height=h*d;const x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);
+  for(let i=0;i<Math.round(w*h/2600);i++){const a=Math.random();x.fillStyle=`rgba(${a>.9?'190,205,255':'236,230,220'},${.15+Math.random()*.5})`;x.fillRect(Math.random()*w,Math.random()*h,a>.97?1.6:1,a>.97?1.6:1)}}
 
-    <section class="panel">
-      <h2>Command Matrix</h2>
-      <div class="matrix" id="matrix"></div>
-    </section>
+const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,scale:3.2});
+stars($('sky'));
 
-    <section class="panel grow">
-      <h2>Top Hubs</h2>
-      <ul class="hubs" id="hubs"></ul>
-      <p class="foot">drag · scroll to zoom · shift-click to trace</p>
-    </section>
-  </aside>
+// ================= server =================
+const TOKEN='__JARVIS_TOKEN__';
+async function api(path,body){
+  const r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({error:`resposta inválida (${r.status})`}));
+  if(!r.ok||j.error)throw Object.assign(new Error(j.error||String(r.status)),{status:r.status});
+  return j}
+const errMsg=e=>e&&e.name==='NotAllowedError'?'O navegador bloqueou o microfone. Libere o acesso ao microfone para localhost.'
+  :e&&e.name==='NotFoundError'?'Nenhum microfone encontrado.':String(e&&e.message||e);
 
-  <!-- ── centre stage ──────────────────────────── -->
-  <section class="stage">
-    <div class="stagetools">
-      <button class="tool" id="btnFit" title="Fit graph to view">⊙ Fit</button>
-      <button class="tool" id="btnLabels" title="Toggle labels">Aa</button>
-      <button class="tool" id="btnDim" title="Toggle contrast">◐</button>
-      <span class="stagecount" id="stageCount"></span>
-    </div>
+// ================= orbiting info =================
+let S={},V={};
+const num=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1});
+const rel=new Intl.RelativeTimeFormat('pt-BR',{numeric:'auto'});
+const ago=ts=>{const h=Math.round((ts*1000-Date.now())/36e5);return Math.abs(h)<24?rel.format(h,'hour'):rel.format(Math.round(h/24),'day')};
+function pregao(){const p=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'short',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(new Date()).map(x=>[x.type,x.value]));
+  // shortcut: ignores B3 holidays; use the b3-* calendar when it matters
+  const m=+p.hour*60+ +p.minute;return!['Sat','Sun'].includes(p.weekday)&&m>=600&&m<1020}
+const dash='—';
+const ITEMS=[
+  ['left',216,'hora',()=>fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>fmt({weekday:'long',day:'numeric',month:'long'})],
+  ['left',198,'cpu',()=>S.cpu==null?dash:Math.round(S.cpu)+'%',()=>S.threads?S.threads+' threads':''],
+  ['left',180,'ram',()=>S.ram==null?dash:`${num.format(S.ram)} / ${num.format(S.ram_total)} GB`,()=>'memória em uso'],
+  ['left',162,'gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'sem leitura da placa'],
+  ['left',144,'ollama',()=>S.ollama==null?'desligado':S.ollama.length?'carregado':'parado',()=>S.ollama&&S.ollama.length?S.ollama.join(', '):'nenhum modelo na memória'],
+  ['right',-30,'b3',()=>pregao()?'pregão aberto':'pregão fechado',()=>pregao()?'fecha às 17h':'abre às 10h'],
+  ['right',-12,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
+  ['right',6,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
+  ['right',24,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
+];
+const orbitEls=ITEMS.map(([side])=>{const e=el('div','orbit '+side);e.append(el('div','k'),el('div','v'),el('div','s'));$('orbits').append(e);return e});
+ITEMS.forEach(([, ,k],i)=>orbitEls[i].querySelector('.k').textContent=k);
+function fillOrbit(){ITEMS.forEach(([, , ,v,s],i)=>{const e=orbitEls[i];e.querySelector('.v').textContent=v();e.querySelector('.s').textContent=s();
+  e.querySelector('.v').classList.toggle('hot',i===1&&S.cpu>80||i===3&&S.gpu&&S.gpu.busy>80)})}
+function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
+  if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{const e=orbitEls[i],k=col[side]++;
+      e.style.transform=`translate(${side==='left'?16:W/2+8}px,${hole.Y+hole.R*2.2+k*46}px)`;e.style.opacity=1});return}
+  const rx=Math.min(W*.37,hole.R*5.6),ry=Math.min(H*.33,hole.R*3.4);
+  ITEMS.forEach(([side,deg],i)=>{const e=orbitEls[i];
+    const a=(deg+(reduce.matches?0:Math.sin(t*.06+i*1.7)*2.2))*Math.PI/180;
+    let x=hole.X+Math.cos(a)*rx,y=hole.Y+Math.sin(a)*ry;const w=e.offsetWidth,h=e.offsetHeight;
+    x=side==='left'?x-w:x;x=Math.max(16,Math.min(W-16-w,x));
+    e.style.transform=`translate(${x}px,${y-h/2}px)`;e.style.opacity=(.45+.55*(.55+.45*Math.cos(a*2))).toFixed(2)})}
+async function refreshSystem(){try{S=await api('/api/system')}catch{}fillOrbit()}
+async function refreshVault(){try{V=await api('/api/vault')}catch{}fillOrbit()}
+refreshSystem();refreshVault();setInterval(refreshSystem,2000);setInterval(refreshVault,60000);
+api('/api/status').then(s=>{
+  const brain=s.runtime==='claude'?'Claude conectado':'Claude indisponível';
+  const ear=s.stt==='whisper'?'voz: whisper local':'voz: whisper.cpp não instalado';
+  $('status').textContent=`${brain} · ${ear}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e));
 
-    <div class="canvaswrap">
-      <div class="reactor-halo"></div>
-      <canvas id="graph"></canvas>
-      <div class="corestate" id="coreState"><b>STANDBY</b><span>awaiting uplink</span></div>
-    </div>
+// ================= microphone: record until you stop talking =================
+let mic=null,recording=null;
+async function getMic(){if(mic)return mic;
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+  const ctx=new AudioContext(),an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
+  return mic={stream,ctx,an,buf:new Float32Array(an.fftSize)}}
+function rms(){mic.an.getFloatTimeDomainData(mic.buf);let s=0;for(const v of mic.buf)s+=v*v;return Math.sqrt(s/mic.buf.length)}
+async function record({silence=1300,max=15000}={}){
+  const m=await getMic();if(m.ctx.state==='suspended')await m.ctx.resume();
+  const rec=new MediaRecorder(m.stream),chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  return new Promise(res=>{const start=performance.now();let spoke=false,quiet=start,floor=0,n=0;
+    rec.onstop=()=>{recording=null;res(new Blob(chunks,{type:rec.mimeType||'audio/webm'}))};
+    recording={stop:()=>rec.state!=='inactive'&&rec.stop()};rec.start(250);
+    const tick=()=>{if(rec.state==='inactive')return;const lv=rms(),now=performance.now();
+      if(now-start<300){floor=(floor*n+lv)/++n}// first 300 ms: measure the room
+      const thr=Math.max(.012,floor*3);hole.goal=mini.goal=Math.min(1,.25+lv*10);
+      if(lv>thr){spoke=true;quiet=now}
+      if((spoke&&now-quiet>silence)||now-start>max)rec.stop();else requestAnimationFrame(tick)};
+    tick()})}
+async function transcribe(blob){
+  const r=await fetch('/api/listen',{method:'POST',headers:{'Content-Type':(blob.type||'audio/webm').split(';')[0],'X-Jarvis-Token':TOKEN},body:blob});
+  const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||'falha na transcrição');return(j.text||'').trim()}
+function speak(text){if(!('speechSynthesis' in window)||vs==='mute'||!text)return;speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';const v=speechSynthesis.getVoices().find(v=>v.lang.startsWith('pt'));if(v)u.voice=v;speechSynthesis.speak(u)}
 
-    <section class="convo" id="convo">
-      <h2>Conversation <em id="convoCount"></em></h2>
-      <div class="transcript" id="transcript"></div>
-    </section>
+// ================= voice turn on the home screen =================
+let vs='idle',busy=false;
+const STATES={idle:'Toque ou aperte Espaço para falar',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
+function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
+  hole.goal=mini.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=s==='think'?2.2:1}
+const say=t=>{$('reply').textContent=t};
+async function listenTurn(){
+  if(recording){recording.stop();return}
+  if(busy||vs==='mute')return;busy=true;
+  try{setV('listen');$('heard').textContent='';say('');speechSynthesis&&speechSynthesis.cancel();
+    const blob=await record();setV('think');const text=await transcribe(blob);
+    if(!text){say('Não ouvi nada. Tente de novo.');return}
+    $('heard').textContent=text;await command(text)}
+  catch(e){say(errMsg(e))}finally{busy=false;if(vs==='listen'||vs==='think')setV('idle')}}
+async function command(raw){
+  const text=raw.replace(/^\s*jarvis[\s,.!:]*/i,'').trim(),t=norm(text);
+  if(!text)return say('Pode falar.');
+  if(/^(abr\w* )?(as |minhas )?notas? diaria|^daily|^diario/.test(t)){say('Abrindo as notas diárias.');location.hash='notas';return}
+  await askClaude(text)}
+async function askClaude(text){
+  setV('think');let out='';
+  try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify({message:text})});
+    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'o Claude não respondeu')}
+    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+    for(;;){const{value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+      while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;
+        let ev;try{ev=JSON.parse(line)}catch{continue}
+        if(ev.t==='delta'){out+=ev.text;say(out)}
+        else if(ev.t==='error'){say(ev.message)}
+        else if(ev.t==='tool'&&ev.phase==='use'){$('state-t').textContent='Usando '+ev.name}}}
+    speak(out)}
+  catch(e){say(errMsg(e))}finally{setV('idle')}}
+$('hole').addEventListener('click',listenTurn);
+$('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();listenTurn()}});
+addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();listenTurn()}});
+$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v||busy)return;$('cmd').value='';$('heard').textContent=v;
+  busy=true;command(v).finally(()=>busy=false)});
+$('mute').onclick=()=>{const off=vs!=='mute';if(off&&vs!=='idle')return;
+  if(off&&mic){mic.stream.getTracks().forEach(t=>t.stop());mic.ctx.close();mic=null}// really release the device
+  setV(off?'mute':'idle');$('mute').setAttribute('aria-pressed',off);$('mute').textContent=off?'mic desligado':'mic ligado'};
+['notas diárias','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
+  b.onclick=()=>{if(busy)return;$('heard').textContent=c;busy=true;command(c).finally(()=>busy=false)};$('cmds').append(b)});
 
-    <div class="askbar">
-      <span class="asklabel">Ask</span>
-      <input id="ask" autocomplete="off" placeholder="“plan my day”">
-      <button id="btnMic" class="mic" title="Live voice — click to start hands-free">🎙 Live</button>
-      <button id="btnSend" class="send">Transmit ▸</button>
-    </div>
-  </section>
+// ================= daily notes =================
+let list=[],note=null,saved='',prevText=null,dictRange=null;
+const ta=$('text'),hint=t=>{$('n-hint').textContent=t};
+const dirty=()=>note&&ta.value!==saved;
+function label(n){if(n.today)return'Hoje';const m=n.name.match(/^(\d+) - (.*)$/);return m?`${m[2].split('-')[0]} ${m[1]}`:n.name}
+async function loadList(){list=(await api('/api/daily')).notes;
+  $('days').replaceChildren(...list.map(n=>{const b=el('button','day',label(n));b.type='button';b.onclick=()=>openNote(n.id);b.dataset.id=n.id;return b}))}
+async function openNote(id){
+  if(dirty()&&!confirm('Há alterações não salvas nesta nota. Descartar?'))return;
+  try{note=await api('/api/daily/read?id='+encodeURIComponent(id))}catch(e){hint(errMsg(e));return}
+  saved=ta.value=note.text;prevText=null;dictRange=null;$('undo').disabled=true;
+  const n=list.find(x=>x.id===id);const d=n&&n.today?fmt({weekday:'long',day:'numeric',month:'long'}):(n?n.name.replace(/^(\d+) - (.*)$/,'$2, $1'):id);
+  $('n-title').textContent=d.replace(/^./,c=>c.toUpperCase());$('n-path').textContent=note.path+(note.mtime?'':' · nova');
+  [...$('days').children].forEach(b=>b.setAttribute('aria-current',b.dataset.id===id));
+  hint(note.mtime?'Clique no buraco negro para ditar. Ctrl+S salva.':'Esta nota ainda não existe; ela é criada ao salvar.')}
+async function saveNote(){if(!note)return;
+  try{const r=await api('/api/daily/save',{id:note.id,text:ta.value,mtime:note.mtime});note.mtime=r.mtime;saved=ta.value;hint('Salvo em '+note.path+'.')}
+  catch(e){hint(e.status===409?'A nota mudou fora daqui (Obsidian?). Copie seu texto, reabra a nota e cole de novo.':'Não salvou: '+errMsg(e))}}
+async function dictate(){
+  if(recording){recording.stop();return}
+  if(vs==='mute')return hint('O microfone está desligado na tela principal.');
+  if(busy)return;busy=true;$('dictate').setAttribute('aria-pressed','true');$('dictate').textContent='Parar';
+  try{setV('dict');hint('Ditando. Fique 3 segundos em silêncio ou clique de novo para terminar.');
+    const blob=await record({silence:3000,max:10*60*1000});setV('think');hint('Transcrevendo…');
+    const text=await transcribe(blob);if(!text){hint('Não ouvi nada.');return}
+    const s=ta.selectionStart,lead=s>0&&!/\s$/.test(ta.value.slice(0,s))?' ':'';
+    ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
+    ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. “Ollama: organizar” reescreve só esse trecho.')}
+  catch(e){hint(errMsg(e))}
+  finally{busy=false;setV('idle');$('dictate').setAttribute('aria-pressed','false');$('dictate').textContent='Ditar'}}
+async function tidyText(){
+  let[s,e]=ta.selectionStart!==ta.selectionEnd?[ta.selectionStart,ta.selectionEnd]:dictRange||[0,0];
+  const part=ta.value.slice(s,e).trim();if(!part)return hint('Selecione um trecho ou dite algo antes de organizar.');
+  $('tidy').disabled=true;setV('think');hint('Ollama reescrevendo…');
+  try{const r=await api('/api/tidy',{text:part});prevText=ta.value;ta.setRangeText(r.text,s,e,'select');dictRange=[s,s+r.text.length];
+    $('undo').disabled=false;hint('Pronto. Revise; “Desfazer” volta ao texto original.')}
+  catch(e){hint(errMsg(e))}finally{$('tidy').disabled=false;setV('idle')}}
+$('dictate').onclick=dictate;$('tidy').onclick=tidyText;$('save').onclick=saveNote;
+$('mini').addEventListener('click',dictate);$('mini').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();dictate()}});
+$('undo').onclick=()=>{if(prevText==null)return;ta.value=prevText;prevText=null;$('undo').disabled=true;hint('Texto original de volta.')};
+addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'&&!$('notes').hidden){e.preventDefault();saveNote()}});
+addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue=''}});
+$('back').addEventListener('click',e=>{if(dirty()&&!confirm('Há alterações não salvas. Sair mesmo assim?'))e.preventDefault()});
 
-  <!-- ── right rail ────────────────────────────── -->
-  <aside class="rail right">
-    <section class="panel">
-      <h2>Filter</h2>
-      <ul class="filter" id="filter"></ul>
-    </section>
-
-    <section class="panel dialpanel">
-      <div class="dial" id="dial">
-        <svg viewBox="0 0 200 200" class="dialsvg">
-          <circle cx="100" cy="100" r="86" class="ring base"/>
-          <circle cx="100" cy="100" r="86" class="ring sweep" id="dialSweep"/>
-          <circle cx="100" cy="100" r="70" class="ring inner"/>
-          <g id="ticks"></g>
-        </svg>
-        <div class="dialtext">J.A.R.V.I.S.</div>
-      </div>
-      <div class="voicestate"><i class="dot" id="voiceDot"></i><span id="voiceState">IDLE</span></div>
-      <div class="vu"><i class="vufill" id="vuFill"></i></div>
-      <div class="tonebox"><span>delivery</span><b id="toneNow">—</b></div>
-      <div class="saytip">say <b>“Jarvis…”</b></div>
-      <div class="clibadge" id="cliBadge">CLAUDE CLI</div>
-    </section>
-
-    <section class="panel grow">
-      <h2>Action Log <em id="liveTag">live telemetry</em></h2>
-      <div class="statgrid">
-        <div><span>SESSION</span><b id="sSession">—</b></div>
-        <div><span>MODEL</span><b id="sModel">—</b></div>
-        <div><span>VAULT</span><b id="sVault">—</b></div>
-        <div><span>TOKENS</span><b id="sTokens">—</b></div>
-        <div><span>LATENCY</span><b id="sLatency">—</b></div>
-        <div><span>LIMIT</span><b id="sLimit">—</b></div>
-      </div>
-      <div class="log" id="log"></div>
-    </section>
-  </aside>
-</main>
-
-<script src="graph.js"></script>
-<script src="app.js"></script>
+// ================= routing + loop =================
+async function route(){const notes=location.hash==='#notas';$('home').hidden=notes;$('notes').hidden=!notes;
+  document.title=notes?'Jarvis · Notas diárias':'Jarvis';
+  if(notes){mini.resize();try{await loadList();if(!note)await openNote(list.find(n=>n.today).id)}catch(e){hint(errMsg(e))}ta.focus()}
+  else{hole.resize();stars($('sky'))}}
+addEventListener('hashchange',route);
+addEventListener('resize',()=>{hole.resize();mini.resize();stars($('sky'))});
+let last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(!$('home').hidden){hole.frame(dt);placeOrbit(now/1000)}else mini.frame(dt);requestAnimationFrame(loop)}
+setV('idle');fillOrbit();route();requestAnimationFrame(loop);
+document.fonts&&document.fonts.ready.then(()=>placeOrbit(performance.now()/1000));
+</script>
 </body>
 </html>

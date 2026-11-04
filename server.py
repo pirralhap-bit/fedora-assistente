@@ -32,7 +32,10 @@ if _env.exists():
 
 import commands    # noqa: E402
 import memory      # noqa: E402
+import notes       # noqa: E402
 import runtime     # noqa: E402
+import sysinfo     # noqa: E402
+import tidy        # noqa: E402
 import voice       # noqa: E402
 
 PORT = int(os.environ.get("JARVIS_PORT", "8720"))
@@ -99,6 +102,21 @@ class Handler(BaseHTTPRequestHandler):
                 server_stt=voice.stt_kind() in ("whisper", "fish"),
                 server_voice=voice.available(), session=SESSION["id"]))
 
+        if p == "/api/system":
+            return self._json(sysinfo.snapshot())
+
+        if p == "/api/vault":
+            return self._json(notes.vault_summary())
+
+        if p == "/api/daily":
+            return self._json(dict(notes=notes.listing()))
+
+        if p == "/api/daily/read":
+            try:
+                return self._json(notes.read(parse_qs(urlparse(self.path).query).get("id", [""])[0]))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+
         if p == "/api/graph":
             force = parse_qs(urlparse(self.path).query).get("force", ["0"])[0] == "1"
             return self._json(memory.build_graph(force=force))
@@ -127,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok():
             return self._json({"error": "unauthorized"}, 401)
         ctype = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        if p in {"/api/run", "/api/speak", "/api/new", "/api/cancel"} and ctype != "application/json":
+        if p in {"/api/run", "/api/speak", "/api/new", "/api/cancel", "/api/daily/save", "/api/tidy"} and ctype != "application/json":
             return self._json({"error": "application/json required"}, 415)
         try:
             raw = self._read(MAX_AUDIO if p == "/api/listen" else MAX_JSON)
@@ -146,6 +164,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": voice.transcribe(raw, self.headers.get("Content-Type", "audio/webm"))})
             except Exception as e:  # noqa: BLE001
                 return self._json({"error": str(e)[:400], "text": ""}, 503)
+
+        if p == "/api/daily/save":
+            try:
+                b = json.loads(raw or b"{}")
+                return self._json({"mtime": notes.save(str(b.get("id", "")), str(b.get("text", "")), b.get("mtime"))})
+            except notes.Conflict as e:
+                return self._json({"error": str(e)}, 409)
+            except (ValueError, json.JSONDecodeError) as e:
+                return self._json({"error": str(e)[:200]}, 400)
+
+        if p == "/api/tidy":
+            try:
+                text = (json.loads(raw or b"{}").get("text") or "").strip()
+                if not text:
+                    return self._json({"error": "texto vazio"}, 400)
+                return self._json({"text": tidy.tidy(text)})
+            except RuntimeError as e:
+                return self._json({"error": str(e)}, 503)
 
         if p == "/api/new":
             runtime.cancel_active()
