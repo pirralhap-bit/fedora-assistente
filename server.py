@@ -38,6 +38,7 @@ import notes       # noqa: E402
 import runtime     # noqa: E402
 import speech      # noqa: E402
 import sysinfo     # noqa: E402
+import modelo      # noqa: E402
 import tidy        # noqa: E402
 import voice       # noqa: E402
 
@@ -245,6 +246,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         q = listener.EAR.subscribe()
+        modelo.window_opened()
         try:
             while True:
                 try:
@@ -257,6 +259,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             listener.EAR.unsubscribe(q)
+            modelo.window_closed()
         self.close_connection = True
 
     def _stream(self, raw):
