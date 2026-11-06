@@ -1,6 +1,6 @@
 # Fedora
 
-Assistente pessoal local (diga “Ok, Fedora”): um buraco negro que ouve, com o sistema e o vault orbitando,
+Assistente pessoal local (toque no buraco negro ou Ctrl+Alt+Espaço): um buraco negro que ouve, com o sistema e o vault orbitando,
 e uma página de notas diárias com ditado. O cérebro é o `claude` CLI (assinatura, sem
 chave de API); a transcrição é o whisper.cpp; a reescrita do ditado e a escolha dos atalhos rápidos são o Gemini (API do Google, `GEMINI_API_KEY` no `.env`). Tudo
 roda em `127.0.0.1`.
@@ -50,3 +50,11 @@ Modo gamer: `tools/modo-gamer.sh liga` para os três serviços e fecha a janela;
 - Tocar no buraco negro / Espaço = falar sem dizer o nome. “mic ligado” desliga o microfone de verdade.
 - “notas diárias” abre o editor; lá: “ditar”, “organizar”, “salvar”, “voltar”. O resto vai pro Claude.
 - Se a janela estiver fechada, “Ok, Fedora” abre ela e entrega o pedido.
+
+## Windows (reconstrução 2026-11-06)
+
+- **Push-to-talk**: o microfone só abre quando você aperta o atalho global (`FEDORA_HOTKEY`, padrão `ctrl+alt+space`),
+  clica no buraco negro ou quando ela faz uma pergunta. Sem escuta contínua, sem palavra de ativação, sem alucinação com música/vídeo.
+- Ouvido: `listener.py` (grava até o Silero VAD achar o fim da fala) → `whisper_server.py` (faster-whisper `small`, CPU) → `server.py`.
+- Subir: `.\iniciar.ps1`. Testar: `python listener.py`, `python vad.py`, `python speech.py`.
+- `medium` e `large-v3-turbo` testados em CPU: 3 a 4 vezes mais lentos (6–9 s), sem acertar mais os nomes; ficou o `small`.

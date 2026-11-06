@@ -305,15 +305,15 @@ const focusEar=()=>api('/api/ear',{action:document.hasFocus()?'focus':'blur'}).c
 addEventListener('focus',focusEar);addEventListener('blur',focusEar);
 function showStatus(){api('/api/status').then(s=>{
   const brain=s.runtime==='claude'?'Claude conectado':'Claude indisponível';
-  const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'diga “Ok, Fedora”';
+  const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'toque no buraco negro ou Ctrl+Alt+Espaço';
   $('status').textContent=`${brain} · ${voice}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e))}
 showStatus();
 // Piper speaks on the server, straight to the speakers: works with the window closed, no browser voices needed
 const speak=text=>{if(text)api('/api/speak',{text}).catch(e=>say(errMsg(e)))};
 
-// ================= voice: the server listens (PipeWire + whisper), the page only shows it =================
+// ================= voice: the server listens on demand (push-to-talk + whisper), the page only shows it =================
 let vs='idle',busy=false,level=0;
-const STATES={idle:'Diga “Ok, Fedora”',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
+const STATES={idle:'Toque ou Ctrl+Alt+Espaço',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
 function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
   hole.goal=mini.goal=chole.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=chole.spin=s==='think'?2.2:1;
   $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
@@ -324,7 +324,7 @@ function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
     if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=chole.goal=Math.min(1,.3+ev.v*2.5)}
     else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}
     else if(ev.t==='wake'){$('heard').textContent='';say('');setV('listen')}
-    else if(ev.t==='command'){if(!ev.text){say('Não entendi. Diga “Ok, Fedora” e o pedido.');return}$('heard').textContent=ev.text;run(ev.text)}
+    else if(ev.t==='command'){if(!ev.text){say('Não entendi. Toque no buraco negro e fale de novo.');return}$('heard').textContent=ev.text;run(ev.text)}
     else if(ev.t==='dictation')insertDictation(ev.text)
     else if(ev.t==='error'){say(ev.message);hint(ev.message)}};
   es.onerror=()=>{$('status').textContent='servidor desconectado · tentando de novo…';es.close();setTimeout(()=>{connect();showStatus()},3000)}}
@@ -384,7 +384,7 @@ async function openNote(id){
   const n=list.find(x=>x.id===id);const d=n&&n.today?fmt({weekday:'long',day:'numeric',month:'long'}):(n?n.name.replace(/^(\d+) - (.*)$/,'$2, $1'):id);
   $('n-title').textContent=d.replace(/^./,c=>c.toUpperCase());$('n-path').textContent=note.path+(note.mtime?'':' · nova');
   [...$('days').children].forEach(b=>b.setAttribute('aria-current',b.dataset.id===id));
-  hint(note.mtime?'Diga “Ok, Fedora, ditar” ou clique no buraco negro. Ctrl+S salva.':'Esta nota ainda não existe; ela é criada ao salvar.')}
+  hint(note.mtime?'Clique no buraco negro. Ctrl+S salva.':'Esta nota ainda não existe; ela é criada ao salvar.')}
 async function saveNote(){if(!note)return;
   try{const r=await api('/api/daily/save',{id:note.id,text:ta.value,mtime:note.mtime});note.mtime=r.mtime;saved=ta.value;hint('Salvo em '+note.path+'.')}
   catch(e){hint(e.status===409?'A nota mudou fora daqui (Obsidian?). Copie seu texto, reabra a nota e cole de novo.':'Não salvou: '+errMsg(e))}}
@@ -397,7 +397,7 @@ function insertDictation(text){
   if(!text)return hint('Não ouvi nada.');
   const s=ta.selectionStart,lead=s>0&&!/\s$/.test(ta.value.slice(0,s))?' ':'';
   ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
-  ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Diga “Ok, Fedora, organizar” ou clique em “Organizar”.')}
+  ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Clique em “Organizar”.')}
 async function tidyText(){
   if(!ta.value.trim())return hint('A nota está vazia.');
   $('tidy').disabled=true;setV('think');hint('Gemini lendo e reorganizando a nota inteira…');

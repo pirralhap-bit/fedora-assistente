@@ -48,7 +48,8 @@ class H(BaseHTTPRequestHandler):
         with wave.open(io.BytesIO(f["file"])) as w:      # 16 kHz mono s16 from the listener; no ffmpeg/av needed
             audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
         segs, _ = model().transcribe(audio, language=None if LANG == "auto" else LANG,
-                                     initial_prompt=prompt, beam_size=1, vad_filter=False, condition_on_previous_text=False)
+                                     initial_prompt=prompt, beam_size=5, vad_filter=True, condition_on_previous_text=False,
+                                     no_speech_threshold=0.5, log_prob_threshold=-1.0, temperature=0.0)
         out = json.dumps({"text": " ".join(s.text.strip() for s in segs)}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

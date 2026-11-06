@@ -348,14 +348,14 @@ def main():
     brain = (f"Claude Code {runtime.version()} — your subscription, no API key"
              if kind == "claude" else "MOCK — claude CLI not reachable")
     print(f"""
-  FEDORA · assistente local (diga “Ok, Fedora”)
+  FEDORA · assistente local (toque no orbe ou Ctrl+Alt+Espaço)
   ────────────────────────────────────────────────
   brain        {brain}
   model        {runtime.MODEL or 'Claude default'}
   vault        {g['total']} notes · {len(g['links'])} links
                {g['vault']}
   voice        Piper ({os.path.basename(speech.VOICE)})
-  listening    whisper.cpp {listener.STT_URL}
+  listening    push-to-talk {listener.HOTKEY} · {listener.STT_URL}
   workdir      {runtime.WORKDIR}
   open         http://localhost:{PORT}
 """, flush=True)
