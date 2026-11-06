@@ -79,7 +79,7 @@ body[data-v="think"] .state i{background:var(--cool)}
 #text:focus-visible{outline:none}
 #text::placeholder{color:var(--faint)}
 .nfoot{grid-column:1/-1;display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding-top:14px;border-top:1px solid #15140f}
-#mini{width:52px;height:52px;flex:none;cursor:pointer}
+#mini{width:140px;height:96px;margin:-22px -14px;flex:none;cursor:pointer;-webkit-mask-image:radial-gradient(closest-side,#000 78%,transparent);mask-image:radial-gradient(closest-side,#000 78%,transparent)}
 .nstate{display:grid;min-width:0;flex:1 1 220px}
 .nstate b{font:400 11px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim);font-weight:400}
 .nstate span{font-size:13px;color:var(--faint)}
@@ -88,6 +88,37 @@ body[data-v="think"] .state i{background:var(--cool)}
 .act.primary{color:var(--hot)}
 .act:disabled{opacity:.4;cursor:default;border-color:transparent}
 .act[aria-pressed="true"]{color:var(--warn)}
+
+/* ---------- #chat: typed conversation, Claude Code style ---------- */
+#chat{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto;padding-block:20px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#chat .nhead{justify-content:center}
+#chat .nhead>*{flex:none}
+.clog{overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding-bottom:24px}
+.clog>*{width:min(720px,100%)}
+.me{margin:22px 0 6px;color:var(--dim);white-space:pre-wrap}
+.me::before{content:"você";display:block;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+.ai{line-height:1.65}
+.ai p,.ai ul,.ai ol,.ai pre,.ai table{margin:0 0 12px}.ai ul{padding-left:20px}
+.ai h3{margin:16px 0 6px;font:500 16px var(--ui);color:var(--white-hot)}
+.ai code{font:400 13px var(--data);color:var(--white-hot)}
+.ai pre{overflow-x:auto;padding:10px 0 10px 14px;border-left:2px solid var(--faint)}
+.ai pre code{color:var(--ink);white-space:pre}
+.ai table{border-collapse:collapse;font-size:14px;display:block;overflow-x:auto}
+.ai th,.ai td{padding:4px 14px 4px 0;text-align:left;border-bottom:1px solid #1d1b16}.ai th{color:var(--dim);font-weight:500}
+.ai a{color:var(--hot)}
+.tool{font:300 12px var(--data);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0}
+.tool b{font-weight:400;color:var(--dim)}
+.tool.bad b{color:var(--warn)}
+.ouvir{background:none;border:0;text-align:left;padding:2px 0;font:400 11px var(--data);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.ouvir:hover{color:var(--ink)}
+.cfoot{display:flex;align-items:flex-end;gap:18px;justify-content:center;padding-top:12px;border-top:1px solid #15140f}
+#chole{width:140px;height:96px;margin:-22px -14px;flex:none;cursor:pointer;-webkit-mask-image:radial-gradient(closest-side,#000 78%,transparent);mask-image:radial-gradient(closest-side,#000 78%,transparent)}
+.cin{flex:1;max-width:720px;display:grid;gap:4px}
+#cin{resize:none;background:none;border:0;border-bottom:1px solid var(--faint);padding:6px 2px;max-height:30vh;font-size:15px;line-height:1.5;caret-color:var(--hot)}
+#cin:focus-visible{outline:none;border-bottom-color:var(--hot)}
+#cin::placeholder{color:var(--faint)}
+#cstate{font:300 11px var(--data);color:var(--faint);min-height:1.5em}
 
 @media (max-width:760px){
   body{overflow:auto}
@@ -136,9 +167,27 @@ body[data-v="think"] .state i{background:var(--cool)}
     <canvas id="mini" role="button" tabindex="0" aria-label="Ditar"></canvas>
     <div class="nstate"><b id="n-state"></b><span id="n-hint"></span></div>
     <button type="button" class="act" id="dictate" aria-pressed="false">Ditar</button>
-    <button type="button" class="act" id="tidy">Ollama: organizar</button>
+    <button type="button" class="act" id="tidy">Organizar</button>
     <button type="button" class="act" id="undo" disabled>Desfazer</button>
     <button type="button" class="act primary" id="save">Salvar</button>
+  </footer>
+</section>
+
+<section id="chat" aria-label="Chat" hidden>
+  <header class="nhead">
+    <a class="back" href="#">← Fedora</a>
+    <h1>Chat</h1>
+    <button type="button" class="act" id="cnew">Nova conversa</button>
+  </header>
+  <div class="clog" id="clog" aria-live="polite"></div>
+  <footer class="cfoot">
+    <canvas id="chole" role="button" tabindex="0" aria-label="Falar em vez de digitar"></canvas>
+    <form class="cin" id="cform">
+      <label class="sr" for="cin">Mensagem</label>
+      <textarea id="cin" rows="1" placeholder="Escreva… (Enter envia, Shift+Enter quebra a linha, Esc interrompe)"></textarea>
+      <span id="cstate"></span>
+    </form>
+    <button type="button" class="act primary" id="csend">Enviar</button>
   </footer>
 </section>
 
@@ -153,11 +202,11 @@ const wait=ms=>new Promise(r=>setTimeout(r,reduce.matches?Math.min(ms,120):ms));
 
 // ================= black hole renderer (shared by the home and the editor) =================
 class Hole{
-  constructor(cv,{count=1600,scale=1,stars=false}={}){this.cv=cv;this.cx=cv.getContext('2d');this.scale=scale;this.level=.1;this.goal=.1;this.spin=1;this.t=0;
+  constructor(cv,{count=1600,scale=1,r=0,stars=false}={}){this.cv=cv;this.cx=cv.getContext('2d');this.scale=scale;this.r=r;this.level=.1;this.goal=.1;this.spin=1;this.t=0;
     this.p=Array.from({length:count},()=>{const r=1.35+Math.pow(Math.random(),1.6)*2.1;return{r,a:Math.random()*Math.PI*2,z:(Math.random()-.5)*.08*r,s:.6+Math.random()*1.4,k:Math.random()}});
     this.resize()}
   resize(){const d=devicePixelRatio||1,w=this.cv.clientWidth,h=this.cv.clientHeight;this.w=w;this.h=h;this.cv.width=w*d;this.cv.height=h*d;this.cx.setTransform(d,0,0,d,0,0);
-    const narrow=this.scale===1&&w<760;this.R=Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.scale>1?h/2:h*(narrow?.2:.44)}
+    const narrow=this.scale===1&&w<760;this.R=this.r||Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.r||this.scale>1?h/2:h*(narrow?.2:.44)}
   col(r,alpha){const t=Math.max(0,Math.min(1,(r-1.35)/2.1));// hot white inside, amber, then deep red outside
     const c=t<.25?[255,241,214]:t<.6?[255,177,92]:[214,92,52];return`rgba(${c[0]},${c[1]},${c[2]},${alpha})`}
   frame(dt){
@@ -197,7 +246,7 @@ class Hole{
 function stars(cv){const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*d;cv.height=h*d;const x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);
   for(let i=0;i<Math.round(w*h/2600);i++){const a=Math.random();x.fillStyle=`rgba(${a>.9?'190,205,255':'236,230,220'},${.15+Math.random()*.5})`;x.fillRect(Math.random()*w,Math.random()*h,a>.97?1.6:1,a>.97?1.6:1)}}
 
-const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,scale:3.2});
+const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,r:17}),chole=new Hole($('chole'),{count:420,r:17});
 stars($('sky'));
 
 // ================= server =================
@@ -225,7 +274,7 @@ const ITEMS=[
   ['left',198,'cpu',()=>S.cpu==null?dash:Math.round(S.cpu)+'%',()=>S.threads?S.threads+' threads':''],
   ['left',180,'ram',()=>S.ram==null?dash:`${num.format(S.ram)} / ${num.format(S.ram_total)} GB`,()=>'memória em uso'],
   ['left',162,'gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'sem leitura da placa'],
-  ['left',144,'ollama',()=>S.ollama==null?'desligado':S.ollama.length?'carregado':'parado',()=>S.ollama&&S.ollama.length?S.ollama.join(', '):'nenhum modelo na memória'],
+  ['left',144,'gemini',()=>{const g=S.gemini;return !g?'pronto':g.estado==='ok'?g.seg+' s':g.estado==='cota'?'cota esgotada':'sem resposta'},()=>{const g=S.gemini;return g?(g.modelo||'')+' · '+new Date(g.at*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'aparece no 1º atalho ou nota'}],
   ['right',-30,'tokens',()=>{const l=S.claude&&S.claude.last;return l?num.format(l.total)+' tokens':dash},()=>{const l=S.claude&&S.claude.last;return l?'última pergunta · '+num.format(l.out)+' de resposta':'aparece depois da 1ª pergunta'}],
   ['right',-12,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
   ['right',6,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
@@ -266,13 +315,13 @@ const speak=text=>{if(text)api('/api/speak',{text}).catch(e=>say(errMsg(e)))};
 let vs='idle',busy=false,level=0;
 const STATES={idle:'Diga “Ok, Fedora”',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
 function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
-  hole.goal=mini.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=s==='think'?2.2:1;
+  hole.goal=mini.goal=chole.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=chole.spin=s==='think'?2.2:1;
   $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
   const d=s==='dict';$('dictate').setAttribute('aria-pressed',d);$('dictate').textContent=d?'Parar':'Ditar'}
 const say=t=>{$('reply').textContent=t};
 function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
   es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data)}catch{return}
-    if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=Math.min(1,.3+ev.v*2.5)}
+    if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=chole.goal=Math.min(1,.3+ev.v*2.5)}
     else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}
     else if(ev.t==='wake'){$('heard').textContent='';say('');setV('listen')}
     else if(ev.t==='command'){if(!ev.text){say('Não entendi. Diga “Ok, Fedora” e o pedido.');return}$('heard').textContent=ev.text;run(ev.text)}
@@ -285,6 +334,10 @@ async function command(raw){
   const text=raw.replace(/^\s*(ok,?\s*)?fedora[\s,.!:]*/i,'').trim(),t=norm(text);
   if(!text)return say('Pode falar.');
   if(/nota\w* diari|^daily|^diario/.test(t)){say('Abrindo as notas diárias.');location.hash='notas';return}
+  if(/\b(abr\w*|modo)\s+(o\s+)?chat\b/.test(t)){location.hash='chat';return}
+  if(!$('chat').hidden){// in the chat, speech is just another message
+    if(/^(volt|inicio|sair)/.test(t)){location.hash='';return}
+    return chatSend(text)}
   if(!$('notes').hidden){// editor voice commands
     if(/^dit/.test(t))return dictate();
     if(/^organiz/.test(t))return tidyText();
@@ -294,24 +347,27 @@ async function command(raw){
   await askClaude(text)}
 async function askClaude(text){
   setV('think');let out='';if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
-  try{const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify({message:text})});
-    if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'o Claude não respondeu')}
-    const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
-    for(;;){const{value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
-      while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;
-        let ev;try{ev=JSON.parse(line)}catch{continue}
+  try{await streamRun({message:text},ev=>{
         if(ev.t==='delta'){out+=ev.text;say(out)}
         else if(ev.t==='error'){say(ev.message)}
-        else if(ev.t==='tool'&&ev.phase==='use'){$('state-t').textContent='Usando '+ev.name}}}
+        else if(ev.t==='tool'&&ev.phase==='use'){$('state-t').textContent='Usando '+ev.name}});
     if(!$('notes').hidden)hint(out);speak(out)}
   catch(e){say(errMsg(e))}finally{setV('idle')}}
+// /api/run answers in NDJSON lines (delta, tool, usage, complete, error); shared by voice and chat
+async function streamRun(body,on){
+  const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify(body)});
+  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||'o Claude não respondeu')}
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+  for(;;){const{value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
+    while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;
+      let ev;try{ev=JSON.parse(line)}catch{continue}on(ev)}}}
 const tap=()=>{if(vs==='listen'||vs==='dict')ear('stop');else if(vs==='idle')ear('listen')};
 $('hole').addEventListener('click',tap);
 $('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
 addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();tap()}});
 $('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v||busy)return;$('cmd').value='';$('heard').textContent=v;run(v)});
 $('mute').onclick=()=>ear(vs==='mute'?'on':'off');
-['notas diárias','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
+['notas diárias','abrir o chat','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
   b.onclick=()=>{$('heard').textContent=c;run(c)};$('cmds').append(b)});
 
 // ================= daily notes =================
@@ -341,10 +397,10 @@ function insertDictation(text){
   if(!text)return hint('Não ouvi nada.');
   const s=ta.selectionStart,lead=s>0&&!/\s$/.test(ta.value.slice(0,s))?' ':'';
   ta.setRangeText(lead+text,s,ta.selectionEnd,'end');dictRange=[s+lead.length,s+lead.length+text.length];
-  ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Diga “Ok, Fedora, organizar” ou clique em “Ollama: organizar”.')}
+  ta.setSelectionRange(...dictRange);ta.focus();hint('Ditado inserido e selecionado. Diga “Ok, Fedora, organizar” ou clique em “Organizar”.')}
 async function tidyText(){
   if(!ta.value.trim())return hint('A nota está vazia.');
-  $('tidy').disabled=true;setV('think');hint('Ollama lendo e reorganizando a nota inteira…');
+  $('tidy').disabled=true;setV('think');hint('Gemini lendo e reorganizando a nota inteira…');
   try{const r=await api('/api/tidy',{note:ta.value});prevText=ta.value;ta.value=r.text;dictRange=null;
     $('undo').disabled=false;hint('Pronto. Revise e salve; “Desfazer” volta à nota de antes.')}
   catch(e){hint(errMsg(e))}finally{$('tidy').disabled=false;setV('idle')}}
@@ -355,16 +411,58 @@ addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='s'&&!$('notes
 addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue=''}});
 $('back').addEventListener('click',e=>{if(dirty()&&!confirm('Há alterações não salvas. Sair mesmo assim?'))e.preventDefault()});
 
+// ================= chat =================
+// tiny markdown: escape first, then only the shapes Claude uses (code, headings, lists, tables, bold, links)
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inl=s=>esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+  .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+const LI=/^\s*([-*]|\d+\.)\s+/,ROW=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+function block(t){return t.split(/\n{2,}/).map(b=>{b=b.replace(/^\n+|\s+$/g,'');if(!b)return'';const ls=b.split('\n');
+  const h=b.match(/^#{1,4}\s+(.*)$/);if(h&&ls.length===1)return`<h3>${inl(h[1])}</h3>`;
+  if(ls.every(l=>LI.test(l)))return`<ul>${ls.map(l=>`<li>${inl(l.replace(LI,''))}</li>`).join('')}</ul>`;
+  if(ls.length>1&&ls.every(l=>/^\s*\|.*\|\s*$/.test(l))){const rows=ls.filter(l=>!/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(ROW);
+    return`<table><tr>${rows[0].map(c=>`<th>${inl(c)}</th>`).join('')}</tr>${rows.slice(1).map(r=>`<tr>${r.map(c=>`<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</table>`}
+  return`<p>${ls.map(inl).join('<br>')}</p>`}).join('')}
+const md=src=>src.split(/^```[^\n]*$/m).map((p,i)=>i%2?`<pre><code>${esc(p.replace(/^\n|\n$/g,''))}</code></pre>`:block(p)).join('');
+const plain=s=>s.replace(/```[\s\S]*?(```|$)/g,' O código está na tela. ').replace(/[*#`|>_]/g,' ').replace(/\s+/g,' ').trim();
+const clog=$('clog'),cin=$('cin'),cstate=t=>{$('cstate').textContent=t};
+const saveLog=()=>{try{sessionStorage.setItem('fedora-chat',clog.innerHTML)}catch{}};
+try{clog.innerHTML=sessionStorage.getItem('fedora-chat')||''}catch{}
+async function chatSend(text){
+  text=(text||'').trim();if(!text)return;if(busy)return cstate('Espere a resposta atual (ou Esc para interromper).');
+  busy=true;setV('think');clog.append(el('div','me',text));
+  const ai=el('div','ai');let out='';const scroll=()=>clog.scrollTop=clog.scrollHeight;clog.append(ai);scroll();cstate('Pensando…');
+  try{await streamRun({message:text,canal:'chat'},ev=>{
+      if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);scroll()}
+      else if(ev.t==='tool'&&ev.phase==='use'){const d=el('div','tool');d.append(el('b',null,'› '+ev.name),' '+(ev.input||''));ai.before(d);cstate('Usando '+ev.name+'…');scroll()}
+      else if(ev.t==='tool'&&ev.phase==='result'&&!ev.ok){const d=ai.previousElementSibling;if(d&&d.classList.contains('tool'))d.classList.add('bad')}
+      else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out)}});
+    ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
+    await refreshSystem();const l=S.claude&&S.claude.last;cstate(l?`${num.format(l.total)} tokens nesta resposta`:'')}
+  catch(e){ai.textContent=errMsg(e);cstate('')}
+  finally{busy=false;setV('idle');saveLog();scroll()}}
+clog.addEventListener('click',e=>{if(e.target.classList.contains('ouvir')){const ai=e.target.previousElementSibling;speak(plain(ai.dataset.raw||ai.textContent))}});
+const sendTyped=()=>{const v=cin.value;if(!v.trim()||busy)return;cin.value='';cin.style.height='';chatSend(v)};
+$('cform').addEventListener('submit',e=>{e.preventDefault();sendTyped()});
+$('csend').onclick=sendTyped;
+cin.addEventListener('input',()=>{cin.style.height='auto';cin.style.height=cin.scrollHeight+'px'});
+cin.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendTyped()}});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('chat').hidden&&busy){api('/api/cancel',{}).catch(()=>{});cstate('Interrompido.')}});
+$('cnew').onclick=async()=>{if(busy)return;try{await api('/api/chat/new',{})}catch(e){return cstate(errMsg(e))}clog.replaceChildren();saveLog();cstate('Conversa nova.');cin.focus()};
+$('chole').addEventListener('click',tap);$('chole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
+
 // ================= routing + loop =================
-async function route(){const notes=location.hash==='#notas';$('home').hidden=notes;$('notes').hidden=!notes;
-  document.title=notes?'Fedora · Notas diárias':'Fedora';
-  if(notes){mini.resize();try{await loadList();if(!note)await openNote(list.find(n=>n.today).id)}catch(e){hint(errMsg(e))}ta.focus()}
+async function route(){const page=location.hash==='#notas'?'notes':location.hash==='#chat'?'chat':'home';
+  $('home').hidden=page!=='home';$('notes').hidden=page!=='notes';$('chat').hidden=page!=='chat';
+  document.title={notes:'Fedora · Notas diárias',chat:'Fedora · Chat',home:'Fedora'}[page];
+  if(page==='notes'){mini.resize();try{await loadList();if(!note)await openNote(list.find(n=>n.today).id)}catch(e){hint(errMsg(e))}ta.focus()}
+  else if(page==='chat'){chole.resize();clog.scrollTop=clog.scrollHeight;cin.focus()}
   else{hole.resize();stars($('sky'))}}
 addEventListener('hashchange',route);
-addEventListener('resize',()=>{hole.resize();mini.resize();stars($('sky'))});
+addEventListener('resize',()=>{hole.resize();mini.resize();chole.resize();stars($('sky'))});
 let last=performance.now();
 function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;
-  if(!$('home').hidden){hole.frame(dt);placeOrbit(now/1000)}else mini.frame(dt);requestAnimationFrame(loop)}
+  if(!$('home').hidden){hole.frame(dt);placeOrbit(now/1000)}else if(!$('chat').hidden)chole.frame(dt);else mini.frame(dt);requestAnimationFrame(loop)}
 setV('idle');fillOrbit();route();requestAnimationFrame(loop);
 document.fonts&&document.fonts.ready.then(()=>placeOrbit(performance.now()/1000));
 </script>

@@ -1,4 +1,4 @@
-"""Fast path: Ollama picks a shortcut from atalhos.md, code does it. Anything unsure goes to Claude (returns None)."""
+"""Fast path: Gemini (flash-lite) picks a shortcut from atalhos.md, code does it. Anything unsure goes to Claude (returns None)."""
 import configparser
 import difflib
 import glob
@@ -12,7 +12,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 
-import modelo
+import llm
 import sysinfo
 
 CATALOG = pathlib.Path(__file__).with_name("atalhos.md")
@@ -124,16 +124,6 @@ def sistema(_, msg=""):
     if g.get("vram") is not None:
         out += f" Placa de vídeo com {br(g['vram'])} de {g['vram_total']:.0f} gigas ocupados, {g.get('busy', 0)} por cento de uso."
     return out
-
-
-def descarregar_modelo(_, msg=""):
-    subprocess.run(["ollama", "stop", modelo.MODEL], capture_output=True, timeout=20)
-    return "Modelo descarregado. A placa de vídeo está livre."
-
-
-def desligar_ollama(_, msg=""):
-    subprocess.Popen(["systemctl", "--user", "stop", "ollama"])   # don't wait: this very request came through Ollama
-    return "Desligando o Ollama. Ele volta quando você abrir a Fedora de novo."
 
 
 def _section(title):
@@ -285,7 +275,9 @@ def timer(arg, msg=""):
     return f"Timer de {quando}" + (f" pra {motivo}." if motivo else ".")
 
 
-_CERQUILHO = ("Cerquilho", -23.165, -47.743)
+# cidade padrão do clima: FEDORA_CIDADE="Nome,lat,lon" no .env
+_n, _lat, _lon = os.environ.get("FEDORA_CIDADE", "São Paulo,-23.550,-46.633").split(",")
+_CASA = (_n.strip(), float(_lat), float(_lon))
 
 
 def _get(url):
@@ -295,8 +287,8 @@ def _get(url):
 
 def clima(arg, msg=""):
     cidade = re.sub(r"^(em |no |na |de )|\b(hoje|amanha|agora)\b", "", fold(arg)).strip()
-    nome, lat, lon = _CERQUILHO
-    if cidade and cidade != "cerquilho":
+    nome, lat, lon = _CASA
+    if cidade and cidade != fold(_CASA[0]):
         g = (_get("https://geocoding-api.open-meteo.com/v1/search?count=1&language=pt&name=" + urllib.parse.quote(cidade))
              .get("results") or [None])[0]
         if not g:
@@ -312,25 +304,23 @@ def clima(arg, msg=""):
 
 
 HANDLERS = {f.__name__.rstrip("_"): f for f in (hora, data, abrir_pasta, abrir, pesquisar_web, volume, brilho,
-                                                 midia, print_, timer, clima, sistema, descarregar_modelo, desligar_ollama)}
+                                                 midia, print_, timer, clima, sistema)}
 
 
 # ── routing ──
 def classify(message):
-    """Ask the local model which shortcut this is. Never waits for a cold load (17 s): no model, no fast path."""
-    if modelo.MODEL not in (sysinfo.ollama() or []):
+    """Ask Gemini which shortcut this is. Slow or offline: no fast path, Claude takes it."""
+    if not llm.ready():
         return None
-    prompt = (CATALOG.read_text(encoding="utf-8") +   # same prefix every time: Ollama reuses its cache
-              '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum". Se não for claramente um deles, use "nenhum".\n'
+    prompt = (CATALOG.read_text(encoding="utf-8") +
+              '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum".\n'
               'Responda só JSON: {"atalho": "<nome exato da lista>", "arg": "<texto ou vazio>"}\n'
               f"Pedido: {message}")
-    body = json.dumps({"model": modelo.MODEL, "prompt": prompt, "stream": False, "format": "json", "think": False,
-                       "keep_alive": modelo.keep_alive(), "options": {"temperature": 0}}).encode()
-    req = urllib.request.Request(sysinfo.OLLAMA_URL + "/api/generate", body, {"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=8) as r:
-            out = json.loads(json.load(r).get("response") or "{}")
-    except (OSError, ValueError):
+        out = llm.json_call(prompt, llm.MODEL_RAPIDO, timeout=7.5, temperature=0)
+    except llm.LLMError:
+        return None
+    if not isinstance(out, dict):
         return None
     name = re.sub(r"\W.*", "", str(out.get("atalho") or "").strip())     # "abrir_app(chrome)" -> "abrir_app"
     arg = out.get("arg")
@@ -367,7 +357,7 @@ def route(message):
 
 
 if __name__ == "__main__":
-    # handlers (no Ollama needed)
+    # handlers (no Gemini needed)
     assert hora("").startswith("São ") and data("").startswith("Hoje é ")
     assert _pasta("meus downloads") and _pasta("meus downloads").is_dir()
     assert _pasta("pasta projetos") == HOME / "Projetos", _pasta("pasta projetos")
@@ -380,7 +370,7 @@ if __name__ == "__main__":
     # routing with the real model: every phrase must land on the right shortcut (handlers not run)
     cases = [("que horas são", "hora"), ("me diz as horas", "hora"), ("que dia é hoje?", "data"),
              ("abre meus downloads", "abrir_pasta"), ("abre o chrome pra mim", "abrir:app:google-chrome"), ("aumenta o volume", "volume"),
-             ("volume 30", "volume"), ("como está o sistema", "sistema"), ("descarrega o modelo", "descarregar_modelo"),
+             ("volume 30", "volume"), ("como está o sistema", "sistema"),
              ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "clima"), ("vai chover hoje?", "clima"),
              ("abre o youtube", "abrir:site:youtube"), ("abre o gta", "abrir:jogo:3240220"), ("bota o cs2", "abrir:jogo:730"),
              ("abre o cities skylines 2", "abrir:jogo:949230"), ("abre o espectáculo", "abrir:app:org.kde.spectacle"),
@@ -392,7 +382,7 @@ if __name__ == "__main__":
              ("me avisa em 1 hora pra tirar a peça da impressora", "timer"), ("quanto custa o PLA hoje?", "nenhum"),
              ("desliga o computador", "nenhum"),
              ("apaga o arquivo teste.txt", "nenhum"), ("fecha o chrome", "nenhum"), ("cria um arquivo lista.txt", "nenhum")]
-    if modelo.MODEL in (sysinfo.ollama() or []):
+    if llm.ready():
         def pick(m):
             c = classify(m)
             if not (c and c[0] in HANDLERS and _confere(c[0], m)):
@@ -405,5 +395,5 @@ if __name__ == "__main__":
         assert not bad, bad
         print(f"roteamento ok ({len(cases)} frases)")
     else:
-        print("modelo não carregado: roteamento não testado")
+        print("sem GEMINI_API_KEY: roteamento não testado")
     print("atalhos ok")

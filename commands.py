@@ -71,36 +71,53 @@ def _tokens_block():
             + "\nA pergunta atual ainda não tem contagem: só fica pronta quando você terminar de responder.")
 
 
-def context_block(message=""):
-    """Dashboard state + the vault notes relevant to this turn."""
+def system_block(chat=False):
+    """The part that rarely changes: goes in the system prompt, so Claude's prompt cache keeps hitting."""
     d = load()
-    # saves a tool round trip (date) on "que horas são?" and lets "amanhã"/"sexta" resolve without one
-    out = [time.strftime("## Agora\n%A, %d/%m/%Y %H:%M (horário local)")]
-    tok = _tokens_block()
-    if tok:
-        out.append(tok)
+    out = []
     if d["profile"]:
         out.append("## Operator profile\n" + "\n".join(f"- {x}" for x in d["profile"][-40:]))
     if d["goal"]:
         out.append(f"## Standing objective\n{d['goal']}")
     if d["personality"]:
         out.append(f"## Tone overlay\n{d['personality']}")
+    out.append((CHAT_STYLE if chat else VOICE_STYLE) + PC_RULES)
+    return "\n\n".join(out)
+
+
+def turn_block(message=""):
+    """The part that changes every turn (clock, tokens, queue, vault recall): rides in the user message,
+    because anything that changes inside the system prompt throws away the cache behind it."""
+    d = load()
+    # saves a tool round trip (date) on "que horas são?" and lets "amanhã"/"sexta" resolve without one
+    out = [time.strftime("## Agora\n%A, %d/%m/%Y %H:%M (horário local)")]
+    tok = _tokens_block()
+    if tok:
+        out.append(tok)
     open_tasks = [t for t in d["tasks"] if not t.get("done")]
     if open_tasks:
         out.append("## Mission queue\n" + "\n".join(f"- {t['text']}" for t in open_tasks[:20]))
-    out.append(VOICE_DIRECTION)
     recall = memory.context_for(message)
     if recall:
         out.append(recall)
     return "\n\n".join(out)
 
 
-VOICE_DIRECTION = """## Como responder
+VOICE_STYLE = """## Como responder
 Você é a Fedora, assistente de voz do usuário no PC dele (Fedora Linux, KDE Plasma, Wayland), em português do Brasil.
 Responda como uma assistente de voz tipo Alexa: simpática, natural, resposta direta primeiro, uma ou duas frases.
 Pergunta de conhecimento geral: responda do que você sabe. Coisa atual (clima, notícia, preço, placar): pesquise na web.
 A resposta é lida em voz alta: sem markdown, sem listas, sem emoji, sem caminhos longos nem comandos na fala.
+"""
 
+CHAT_STYLE = """## Como responder
+Você é a Fedora, assistente do usuário no PC dele (Fedora Linux, KDE Plasma, Wayland), em português do Brasil,
+agora no modo chat: ele DIGITA e LÊ na tela, como no Claude Code. Pode usar markdown (listas, tabelas, blocos de código,
+caminhos e comandos). Resposta direta primeiro; aprofunde quando o pedido pedir. Use as skills quando ajudarem.
+Coisa atual (clima, notícia, preço, placar): pesquise na web.
+"""
+
+PC_RULES = """
 ## Você controla o PC
 Você tem acesso total ao computador do usuário e deve FAZER o que ele pede, não explicar como fazer:
 abrir app (gtk-launch <id.desktop> ou o comando do app, em segundo plano com setsid), fechar app (pkill, ou kill pelo pid),
@@ -109,7 +126,6 @@ Ao terminar, confirme em poucas palavras ("Pronto, abri o Chrome.").
 Regras fixas:
 - Apagar é SEMPRE mandar para a Lixeira com gio trash, nunca rm. Antes de apagar, diga o que vai apagar e pergunte "confirma?"; só apague depois do sim.
 - Antes de fechar um app que pode ter trabalho não salvo (editor, documento, jogo), pergunte "confirma?".
-- "Descarrega o modelo": ollama stop qwen3:8b. "Desliga o Ollama": systemctl --user stop ollama (volta sozinho quando a janela da Fedora abrir de novo).
 - Nunca desligue, reinicie, suspenda nem encerre a sessão do PC, mesmo que peçam.
 - Se o pedido parecer ter sido ouvido pela metade ou não fizer sentido, pergunte em vez de agir."""
 

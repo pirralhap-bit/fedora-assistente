@@ -34,6 +34,10 @@ DENY = ["Bash(shutdown:*)", "Bash(poweroff:*)", "Bash(reboot:*)", "Bash(halt:*)"
         "Bash(systemctl suspend:*)", "Bash(systemctl hibernate:*)", "Bash(loginctl poweroff:*)",
         "Bash(loginctl reboot:*)", "Bash(rm:*)", "Bash(shred:*)",
         "Bash(mkfs:*)", "Bash(dd:*)"]
+# Light mode (measured 2026-11-05: 26k -> 10.5k tokens of fixed context). ToolSearch must stay:
+# without it the MCP tools (Gmail, Drive, Chrome) load in full instead of deferred (17k measured).
+LIGHT = ["--disable-slash-commands",
+         "--tools", "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,ToolSearch"]
 LIMITS = {}   # last seen plan usage: {"five_hour": {"used": .29, "resets": epoch}, ...}
 RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
@@ -104,13 +108,18 @@ def version():
     return detail if ok else "unavailable"
 
 
-def build_command(message, session_id=None, system=None):
+def build_command(message, session_id=None, system=None, full=True):
     cmd = _claude_base() + [
         "-p", message,
         "--output-format", "stream-json",
         "--include-partial-messages",
         "--verbose",
+        "--exclude-dynamic-system-prompt-sections",   # cwd/date/git out of the system prompt: steadier cache
+        # the ponytail coding plugin injects ~1.6k tokens per session and asks for a "what I skipped" line: wrong for voice
+        "--settings", json.dumps({"enabledPlugins": {"ponytail@ponytail": False}}),
     ]
+    if not full:
+        cmd += LIGHT
     if valid_session(session_id):
         cmd += ["--resume", str(session_id)]
     if MODEL:
@@ -136,15 +145,15 @@ def _short(value, limit=90):
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
-def run_claude(message, session_id=None, system=None):
+def run_claude(message, session_id=None, system=None, full=True):
     with EXECUTION_LOCK:
-        yield from _run_locked(message, session_id, system)
+        yield from _run_locked(message, session_id, system, full)
 
 
-def _run_locked(message, session_id=None, system=None):
+def _run_locked(message, session_id=None, system=None, full=True):
     global _ACTIVE_PROC
     started = time.monotonic()
-    cmd = build_command(message, session_id, system)
+    cmd = build_command(message, session_id, system, full)
 
     env = dict(os.environ)
     home = os.path.expanduser("~")
@@ -337,11 +346,11 @@ def run_mock(message, session_id=None, system=None):
                                    f"Diagnostic: {detail[:200]}"))
 
 
-def run(message, session_id=None, system=None):
+def run(message, session_id=None, system=None, full=True):
     if runtime_kind() != "claude":
         yield from run_mock(message, session_id, system)
         return
     try:
-        yield from run_claude(message, session_id, system)
+        yield from run_claude(message, session_id, system, full)
     except Exception as e:  # noqa: BLE001
         yield dict(t="error", message=f"could not start Claude core: {e}")

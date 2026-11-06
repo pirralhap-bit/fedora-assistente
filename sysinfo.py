@@ -1,12 +1,11 @@
-"""Live machine numbers for the orbit: CPU, RAM, AMD GPU busy/VRAM, and what Ollama has loaded."""
+"""Live machine numbers for the orbit: CPU, RAM, AMD GPU busy/VRAM, and how the last Gemini call went."""
 import glob
-import json
 import os
 import threading
 import time
-import urllib.request
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+import llm
+
 _LOCK = threading.Lock()
 _prev = {}
 
@@ -45,16 +44,7 @@ def _gpu():
     return None
 
 
-def ollama():
-    """Models Ollama has in memory right now, or None when it is not running."""
-    try:
-        with urllib.request.urlopen(OLLAMA_URL + "/api/ps", timeout=0.4) as r:
-            return [m.get("name") for m in json.load(r).get("models", [])]
-    except (OSError, ValueError):
-        return None
-
-
 def snapshot():
     used, total = _ram()
     return dict(cpu=_cpu(), threads=os.cpu_count(), ram=used, ram_total=total,
-                gpu=_gpu(), ollama=ollama(), at=time.time())
+                gpu=_gpu(), gemini=dict(llm.STATUS) or None, at=time.time())

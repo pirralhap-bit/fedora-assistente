@@ -2,6 +2,7 @@
 Type=Application
 Name=Fedora
 Comment=Assistente local (diga “Ok, Fedora”)
-Exec=/home/ppirralha/Projetos/jarvis/abrir-janela.sh
+# instalar.sh troca pelo caminho real do repositório
+Exec=abrir-janela.sh
 Icon=audio-input-microphone
 Categories=Utility;

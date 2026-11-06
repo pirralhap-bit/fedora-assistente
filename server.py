@@ -32,13 +32,13 @@ if _env.exists():
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 import commands    # noqa: E402
+import conversa    # noqa: E402
 import listener    # noqa: E402
 import memory      # noqa: E402
 import notes       # noqa: E402
 import runtime     # noqa: E402
 import speech      # noqa: E402
 import sysinfo     # noqa: E402
-import modelo      # noqa: E402
 import tidy        # noqa: E402
 
 PORT = int(os.environ.get("JARVIS_PORT", "8720"))
@@ -64,7 +64,8 @@ def _token():
 API_TOKEN = _token()
 RUN_LOCK = threading.Lock()
 MAX_JSON = 1024 * 1024
-SESSION = {"id": None}
+SESSION = {"id": None, "modo": None, "ultima": 0, "turnos": 0}
+CHAT = {"id": None}   # typed chat: its own long session, full Claude Code, no window
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -156,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok():
             return self._json({"error": "unauthorized"}, 401)
         ctype = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        if p in {"/api/run", "/api/speak", "/api/cancel", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
+        if p in {"/api/run", "/api/speak", "/api/cancel", "/api/chat/new", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
             return self._json({"error": "application/json required"}, 415)
         try:
             raw = self._read(MAX_JSON)
@@ -198,6 +199,10 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as e:
                 return self._json({"error": str(e)}, 503)
 
+        if p == "/api/chat/new":
+            CHAT["id"] = None
+            return self._json({"ok": True})
+
         if p == "/api/cancel":
             stopped = runtime.cancel_active()
             SESSION["id"] = None
@@ -221,7 +226,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         q = listener.EAR.subscribe()
-        modelo.window_opened()
         try:
             while True:
                 try:
@@ -234,7 +238,6 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             listener.EAR.unsubscribe(q)
-            modelo.window_closed()
         self.close_connection = True
 
     def _stream(self, raw):
@@ -245,8 +248,9 @@ class Handler(BaseHTTPRequestHandler):
         message = (payload.get("message") or "").strip()
         if not message:
             return self._json({"error": "empty message"}, 400)
+        chat = payload.get("canal") == "chat"
         if payload.get("fresh"):
-            SESSION["id"] = None
+            (CHAT if chat else SESSION)["id"] = None
 
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
@@ -258,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write((json.dumps(ev) + "\n").encode())
             self.wfile.flush()
 
-        cmd = commands.handle(message, runner=lambda m: runtime.run(m, None, commands.context_block(m)))
+        cmd = None if chat else commands.handle(message)
         if cmd:
             if cmd.get("note"):
                 emit(dict(t="note", message=cmd["note"]))
@@ -277,20 +281,49 @@ class Handler(BaseHTTPRequestHandler):
                     emit(event)
                 emit(dict(t="delta", text=cmd.get("reply", "Done.")))
                 emit(dict(t="complete", ms=0))
+                if cmd.get("note") == "atalho":
+                    conversa.lembrar(message, cmd.get("reply"))   # "abre de novo" after a shortcut still works
                 return
             message = cmd["message"]
 
-        system = commands.context_block(message) or None
+        if chat:
+            return self._chat(message, emit)
+        full = conversa.completo(message)
+        if not conversa.continua(SESSION, full):
+            SESSION.update(id=None, turnos=0)
+        extra = [commands.turn_block(message)]
+        if SESSION["id"] is None:
+            extra.append(conversa.recente())
+        prompt = "\n\n".join([x for x in extra if x] + ["## Pedido\n" + message])
         hit = memory.top_match(message)
         if hit:
             emit(dict(t="focus", id=hit))
+        reply = []
         try:
-            for ev in runtime.run(message, SESSION["id"], system):
+            for ev in runtime.run(prompt, SESSION["id"], commands.system_block(), full):
+                if ev.get("t") == "delta":
+                    reply.append(ev.get("text", ""))
                 if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
-                    SESSION["id"] = ev["session_id"]
+                    SESSION.update(id=ev["session_id"], modo=full, ultima=time.time(), turnos=SESSION["turnos"] + 1)
+                    conversa.lembrar(message, "".join(reply))
                 if ev.get("t") == "error":
                     SESSION["id"] = None
                 emit(ev)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:  # noqa: BLE001
+            try:
+                emit(dict(t="error", message=str(e)[:300]))
+            except OSError:
+                pass
+
+    def _chat(self, message, emit):
+        prompt = commands.turn_block(message) + "\n\n## Pedido\n" + message
+        try:
+            for ev in runtime.run(prompt, CHAT["id"], commands.system_block(chat=True), True):
+                if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
+                    CHAT["id"] = ev["session_id"]
+                emit(ev)   # an error keeps the session: the chat history is worth more than a retry from scratch
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as e:  # noqa: BLE001

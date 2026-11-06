@@ -1,6 +1,6 @@
 # Atalhos da Fedora
 
-O Ollama lê este arquivo para escolher o atalho de cada pedido; o código em `atalhos.py` executa.
+O Gemini lê este arquivo para escolher o atalho de cada pedido; o código em `atalhos.py` executa.
 Pode editar os exemplos e os sites à vontade. Apps e jogos instalados entram sozinhos. Atalho novo aqui sem código lá vai para o Claude.
 
 ## Rápidos (resposta direta, sem Claude)
@@ -15,10 +15,8 @@ Pode editar os exemplos e os sites à vontade. Apps e jogos instalados entram so
 - `midia` (arg = "tocar", "pausar", "próxima" ou "anterior"): controla o player (música, YouTube). Ex.: "pausa a música", "pula essa", "volta a música", "continua tocando"
 - `print` (arg = "tela", "janela" ou "área"; vazio = tela): captura de tela. Ex.: "tira um print", "printa essa janela", "print de uma área"
 - `timer` (arg = duração e, se houver, o motivo): avisa depois do tempo, falando. Ex.: "timer de 20 minutos", "me avisa em 1 hora pra tirar a peça da impressora", "me lembra daqui a meia hora de ligar pro cliente"
-- `clima` (arg = cidade, vazio = Cerquilho): previsão do tempo de hoje ou amanhã. Ex.: "vai chover hoje?", "como tá o tempo amanhã", "qual a temperatura em Sorocaba"
+- `clima` (arg = cidade, vazio = cidade padrão): previsão do tempo de hoje ou amanhã. Ex.: "vai chover hoje?", "como tá o tempo amanhã", "qual a temperatura em Sorocaba"
 - `sistema`: uso de RAM e placa de vídeo. Ex.: "como está o sistema", "quanto de memória estou usando"
-- `descarregar_modelo`: tira o modelo do Ollama da placa de vídeo. Ex.: "descarrega o modelo", "libera a placa de vídeo"
-- `desligar_ollama`: para o serviço do Ollama (volta quando a janela da Fedora abrir de novo). Ex.: "desliga o ollama"
 
 ## Pela janela (já instantâneos, não passam por aqui)
 

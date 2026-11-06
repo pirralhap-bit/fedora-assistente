@@ -1,14 +1,8 @@
-"""Rewrite dictated text into a clean Markdown block with the local Ollama model."""
-import json
-import os
+"""Rewrite dictated text into a clean Markdown block with Gemini (llm.py)."""
 import re
-import urllib.error
-import urllib.request
 
-import modelo
-import sysinfo
+import llm
 
-from modelo import MODEL  # noqa: E402  (one model setting for notes and the window hold)
 PROMPT = """Você organiza uma nota diária do Obsidian, em português. Abaixo está o corpo da nota inteiro, com as
 seções "## ..." e, misturado, texto ditado solto. Separe TUDO em itens curtos e coloque cada um na seção certa:
 - "Para hoje": o que precisa ser feito hoje. Formato "- [ ] Fazer Y #to-do"
@@ -46,7 +40,7 @@ def check(before, after):
     novos = [set(t) for t in _itens(after)]
     lost += [" ".join(t) for t in _itens(before) if not any(len(set(t) & n) >= 0.8 * len(set(t)) for n in novos)]
     if lost:
-        raise RuntimeError("O Ollama perdeu parte da nota (" + "; ".join(lost[:3]) + "). Nada foi mudado.")
+        raise RuntimeError("O Gemini perdeu parte da nota (" + "; ".join(lost[:3]) + "). Nada foi mudado.")
 
 
 def _montar(body, secoes):
@@ -66,22 +60,12 @@ def tidy_note(note):
     m = _FRONT.match(note)
     head, body = (m.group(0), note[m.end():]) if m else ("", note)
     body = body.strip() + "\n"
-    req = urllib.request.Request(sysinfo.OLLAMA_URL + "/api/generate", json.dumps(dict(
-        model=MODEL, prompt=PROMPT + body, stream=False, think=False, format="json",  # qwen3 would "think" for seconds first
-        keep_alive=modelo.keep_alive(), options=dict(temperature=0.2, num_ctx=8192))).encode(),
-        {"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            secoes = json.loads(json.load(r).get("response") or "{}")
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Ollama recusou ({e.code}): o modelo {MODEL} está instalado? "
-                           f"Rode: ollama pull {MODEL}") from e
-    except OSError as e:
-        raise RuntimeError("Ollama não está rodando em " + sysinfo.OLLAMA_URL) from e
-    except ValueError as e:
-        raise RuntimeError("O Ollama respondeu fora do formato. Nada foi mudado.") from e
+        secoes = llm.json_call(PROMPT + body, llm.MODEL, timeout=60, thinking="low")
+    except llm.LLMError as e:
+        raise RuntimeError(str(e) + " Nada foi mudado.") from e
     if not isinstance(secoes, dict):
-        raise RuntimeError("O Ollama respondeu fora do formato. Nada foi mudado.")
+        raise RuntimeError("O Gemini respondeu fora do formato. Nada foi mudado.")
     out = _montar(body, secoes)
     check(body, out)
     return head + "\n" + out

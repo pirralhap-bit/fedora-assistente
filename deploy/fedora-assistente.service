@@ -1,7 +1,7 @@
 [Unit]
 Description=Fedora — assistente local (ouve "Ok, Fedora")
-Wants=whisper.service ollama.service
-After=whisper.service ollama.service pipewire.service graphical-session.target
+Wants=whisper.service
+After=whisper.service pipewire.service graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
