@@ -20,6 +20,10 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+for _s in (sys.stdout, sys.stderr):   # Windows consoles/pipes default to cp1252: the banner has non-ASCII
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = pathlib.Path(__file__).resolve().parent
 UI = ROOT / "ui"
 
@@ -44,7 +48,12 @@ import tidy        # noqa: E402
 PORT = int(os.environ.get("JARVIS_PORT", "8720"))
 def _token():
     """Same token across service restarts (an open window keeps working); new one each boot (tmpfs)."""
-    f = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}") / "fedora-assistente.token"
+    if os.name == "nt":
+        d = pathlib.Path(os.environ.get("LOCALAPPDATA", pathlib.Path.home())) / "fedora-assistente"
+        d.mkdir(parents=True, exist_ok=True)
+    else:
+        d = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+    f = d / "fedora-assistente.token"
     try:
         tok = f.read_text().strip()
         if len(tok) >= 32:

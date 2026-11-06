@@ -1,2 +1,8 @@
 numpy==2.5.4
 onnxruntime==1.31.1
+# Windows
+sounddevice; sys_platform == "win32"
+psutil; sys_platform == "win32"
+pillow; sys_platform == "win32"
+tzdata; sys_platform == "win32"
+faster-whisper; sys_platform == "win32"

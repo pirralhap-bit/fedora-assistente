@@ -11,6 +11,9 @@ _prev = {}
 
 
 def _cpu():
+    if os.name == "nt":
+        import psutil
+        return psutil.cpu_percent(interval=None)
     with open("/proc/stat") as f:
         v = [int(x) for x in f.readline().split()[1:]]
     idle, total = v[3] + v[4], sum(v)
@@ -23,6 +26,10 @@ def _cpu():
 
 
 def _ram():
+    if os.name == "nt":
+        import psutil
+        m = psutil.virtual_memory()
+        return round(m.used / 2**30, 1), round(m.total / 2**30, 1)
     m = {}
     with open("/proc/meminfo") as f:
         for line in f:

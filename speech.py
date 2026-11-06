@@ -5,8 +5,10 @@ import re
 import subprocess
 import threading
 
-PIPER = os.path.expanduser(os.environ.get("PIPER_BIN", "~/.local/opt/piper/piper"))
-VOICE = os.path.expanduser(os.environ.get("PIPER_VOICE", "~/.local/share/piper-voices/pt_BR-faber-medium.onnx"))
+WIN = os.name == "nt"
+_DADOS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "fedora-assistente")
+PIPER = os.path.expanduser(os.environ.get("PIPER_BIN", os.path.join(_DADOS, "piper", "piper.exe") if WIN else "~/.local/opt/piper/piper"))
+VOICE = os.path.expanduser(os.environ.get("PIPER_VOICE", os.path.join(_DADOS, "voices", "pt_BR-faber-medium.onnx") if WIN else "~/.local/share/piper-voices/pt_BR-faber-medium.onnx"))
 MAX_CHARS = 900
 _lock = threading.Lock()
 _procs = []
@@ -49,13 +51,48 @@ def speaking():
         return any(p.poll() is None for p in _procs)
 
 
+class _Saida:
+    """Stand-in for the pw-play process on Windows: plays raw s16 mono through sounddevice, killable like a Popen."""
+    def __init__(self, src, rate):
+        self.returncode = None
+        self._stop = False
+        self._t = threading.Thread(target=self._run, args=(src, rate), daemon=True)
+        self._t.start()
+
+    def _run(self, src, rate):
+        import sounddevice as sd
+        try:
+            with sd.RawOutputStream(samplerate=rate, channels=1, dtype="int16") as out:
+                while not self._stop:
+                    buf = src.read(4096)
+                    if not buf:
+                        break
+                    out.write(buf[:len(buf) - len(buf) % 2])
+            self.returncode = 1 if self._stop else 0
+        except Exception:  # noqa: BLE001 — no audio device: behave like a failed player
+            self.returncode = 1
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self):
+        self._t.join()
+
+    def kill(self):
+        self._stop = True
+
+
 def _play(text, then=None):
     tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     # --raw: without it pw-play tries to sniff a file format on stdin and fails silently
-    play = subprocess.Popen(["pw-play", "--raw", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
-                            stdin=tts.stdout)
-    tts.stdout.close()
+    if WIN:
+        play = _Saida(tts.stdout, _rate())
+    else:
+        play = subprocess.Popen(["pw-play", "--raw", "--rate", str(_rate()), "--channels", "1", "--format", "s16", "-"],
+                                stdin=tts.stdout)
+    if not WIN:
+        tts.stdout.close()
     with _lock:
         _procs.extend([tts, play])
     try:
@@ -85,9 +122,14 @@ def say(text, then=None):
 
 if __name__ == "__main__":
     import sys
+    if sys.argv[1:2] == ["--aviso-em"]:   # Windows timer: sleep, then the same notice
+        import time
+        time.sleep(float(sys.argv[2]))
+        sys.argv[1:3] = ["--aviso"]
     if sys.argv[1:2] == ["--aviso"]:   # fired by a timer (atalhos.timer via systemd-run)
         msg = " ".join(sys.argv[2:]) or "Seu timer terminou."
-        subprocess.run(["notify-send", "-a", "Fedora", "-u", "critical", "Fedora", msg])
+        if not WIN:
+            subprocess.run(["notify-send", "-a", "Fedora", "-u", "critical", "Fedora", msg])
         _play(clean(msg))
         sys.exit(0)
     assert clean("**Olá** [dry] veja [aqui](http://x.y) 🙂 ok") == "Olá veja aqui ok", clean("**Olá** [dry] veja [aqui](http://x.y) 🙂 ok")

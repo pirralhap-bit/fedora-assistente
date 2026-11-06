@@ -31,8 +31,10 @@ NAME = os.environ.get("ASSISTANT_NAME", "Fedora")
 DEBUG = os.environ.get("FEDORA_DEBUG") == "1"
 HINT = f"Ok, {NAME}."     # initial prompt: tells whisper the name is a word it should expect
 APP_URL = f"http://localhost:{os.environ.get('JARVIS_PORT', '8720')}/"
-APP_CMD = os.environ.get("FEDORA_APP_CMD", "google-chrome-stable --app={url}")
-ORB_CMD = ["/usr/bin/python3", str(pathlib.Path(__file__).with_name("orb.py"))]   # system python: GTK 4 lives there
+WIN = os.name == "nt"
+_EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+APP_CMD = os.environ.get("FEDORA_APP_CMD", f'"{_EDGE}" --app={{url}}' if WIN else "google-chrome-stable --app={url}")
+ORB_CMD = None if WIN else ["/usr/bin/python3", str(pathlib.Path(__file__).with_name("orb.py"))]   # GTK 4 orb is Linux-only   # system python: GTK 4 lives there
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
 # seconds of quiet that end a segment (~1 s pauses mid-sentence are normal) and longest segment, in frames
 SILENCE = {k: int(v * FPS) for k, v in {"wake": 1.2, "command": 1.6, "dictate": 3.0}.items()}
@@ -84,6 +86,34 @@ def whisper(url, pcm, timeout=120):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         text = json.load(r).get("text", "")
     return " ".join(re.sub(r"[\[(][^\])]{0,40}[\])]", " ", text).split()).strip()
+
+
+class _Mic:
+    """Windows microphone: sounddevice input stream with the same read()/poll()/terminate() surface as the pw-record pipe."""
+    def __init__(self):
+        import sounddevice as sd
+        self._s = sd.RawInputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=FRAME)
+        self._s.start()
+
+    def read(self, n):
+        data, _ = self._s.read(n // 2)
+        return bytes(data)
+
+    def poll(self):
+        return None if self._s.active else 1
+
+    def terminate(self):
+        self.kill()
+
+    def kill(self):
+        try:
+            self._s.stop()
+            self._s.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def wait(self, timeout=None):
+        pass
 
 
 class Ear:
@@ -150,6 +180,8 @@ class Ear:
                 self.orb = None
 
     def _orb_show(self, hold):
+        if not ORB_CMD:
+            return
         with self.orb_lock:
             self.orb_hold = max(self.orb_hold, time.time() + hold)
             if self.focused or (self.orb and self.orb.poll() is None):
@@ -193,7 +225,7 @@ class Ear:
 
     def _open_window(self):
         try:
-            subprocess.Popen(shlex.split(APP_CMD.format(url=APP_URL)), stdout=subprocess.DEVNULL,
+            subprocess.Popen(shlex.split(APP_CMD.format(url=APP_URL), posix=not WIN), stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
             pass
@@ -246,12 +278,12 @@ class Ear:
                 time.sleep(0.3)
                 continue
             try:
-                self.proc = subprocess.Popen(["pw-record", "--rate", str(RATE), "--channels", "1",
-                                              "--format", "s16", "-"], stdout=subprocess.PIPE,
-                                             stderr=subprocess.DEVNULL)
+                self.proc = _Mic() if WIN else subprocess.Popen(
+                    ["pw-record", "--rate", str(RATE), "--channels", "1", "--format", "s16", "-"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
                 self.error = None
-                self._listen(self.proc.stdout)
-            except OSError as e:
+                self._listen(self.proc if WIN else self.proc.stdout)
+            except Exception as e:
                 self.error = f"microfone: {e}"
             self._stop_proc()
             time.sleep(1)
@@ -315,7 +347,7 @@ class Ear:
 
     def _handle(self, mode, pcm):
         if DEBUG:   # keep the last 30 clips in RAM (tmpfs, gone at reboot) to compare speech models on the real voice
-            d = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "fedora-ouvido"
+            d = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TEMP", "/tmp")) / "fedora-ouvido"
             d.mkdir(mode=0o700, exist_ok=True)
             (d / time.strftime(f"%H%M%S-{mode}.wav")).write_bytes(_wav(pcm))
             for old in sorted(d.glob("*.wav"))[:-30]:

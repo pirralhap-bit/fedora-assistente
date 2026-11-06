@@ -17,6 +17,7 @@ import sysinfo
 
 CATALOG = pathlib.Path(__file__).with_name("atalhos.md")
 HOME = pathlib.Path.home()
+WIN = os.name == "nt"
 _DIAS = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
 _MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro",
           "outubro", "novembro", "dezembro"]
@@ -27,6 +28,13 @@ def fold(s):
 
 
 def _detach(cmd):
+    if WIN:
+        if cmd and cmd[0] == "startfile":      # ["startfile", path_or_url]: the Windows "open" verb
+            os.startfile(cmd[1])
+        else:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        return
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
@@ -51,6 +59,10 @@ def _pasta(arg):
         return HOME
     for key, xdg in _XDG.items():
         if a.startswith(key):
+            if WIN:
+                alvo = {"DOWNLOAD": "Downloads", "DOCUMENTS": "Documents", "PICTURES": "Pictures", "MUSIC": "Music",
+                        "VIDEOS": "Videos", "DESKTOP": "Desktop"}[xdg]
+                return HOME / alvo
             out = subprocess.run(["xdg-user-dir", xdg], capture_output=True, text=True).stdout.strip()
             return pathlib.Path(out) if out else None
     for p in [HOME / arg] + sorted(HOME.iterdir()):   # a folder of the home dir, by name without accents/case
@@ -63,11 +75,28 @@ def abrir_pasta(arg, msg=""):
     p = _pasta(arg)
     if not p or not p.is_dir():
         return None
-    _detach(["xdg-open", str(p)])
+    _detach(["startfile", str(p)] if WIN else ["xdg-open", str(p)])
     return f"Pronto, abri {'a pasta pessoal' if p == HOME else 'a pasta ' + p.name}."
 
 
+def _apps_win():
+    """Start Menu shortcuts (.lnk): id = the shortcut path, opened with the shell."""
+    raiz = [os.path.join(os.environ.get("ProgramData", ""), "Microsoft/Windows/Start Menu/Programs"),
+            os.path.join(os.environ.get("APPDATA", ""), "Microsoft/Windows/Start Menu/Programs")]
+    vistos = set()
+    for d in raiz:
+        for f in glob.glob(d + "/**/*.lnk", recursive=True):
+            nome = pathlib.Path(f).stem
+            if fold(nome) in vistos or re.search(r"uninstall|desinstal|readme|license", nome, re.I):
+                continue
+            vistos.add(fold(nome))
+            yield f, {fold(nome)}, nome
+
+
 def _apps():
+    if WIN:
+        yield from _apps_win()
+        return
     dirs = ["/usr/share/applications", str(HOME / ".local/share/applications"),
             "/var/lib/flatpak/exports/share/applications", str(HOME / ".local/share/flatpak/exports/share/applications")]
     for f in (f for d in dirs for f in glob.glob(d + "/*.desktop")):
@@ -84,7 +113,7 @@ def _apps():
         yield pathlib.Path(f).stem, names, e.get("Name", "") + (f" ({generic})" if generic else "")
 
 
-_STEAM = HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
+_STEAM = pathlib.Path(os.environ.get("STEAM_DIR") or (r"C:\Program Files (x86)\Steam" if WIN else HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"))
 def _jogos():
     """(appid, name) of installed Steam games, every library, without Proton/runtimes."""
     libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(errors="replace")) \
@@ -97,8 +126,37 @@ def _jogos():
                 yield appid.group(1), name.group(1)
 
 
+def _tecla(vk, vezes=1):
+    import ctypes
+    for _ in range(vezes):
+        ctypes.windll.user32.keybd_event(vk, 0, 1, 0)       # KEYEVENTF_EXTENDEDKEY
+        ctypes.windll.user32.keybd_event(vk, 0, 3, 0)       # ... | KEYEVENTF_KEYUP
+
+
+def _volume_win(a):
+    VK_MUTE, VK_DOWN, VK_UP = 0xAD, 0xAE, 0xAF               # each press moves 2 %
+    if re.search(r"mud|mute|silenc", a):
+        _tecla(VK_MUTE)
+        return "Pronto."
+    n = re.search(r"\d+", a)
+    if n:
+        v = min(100, int(n.group()))
+        _tecla(VK_DOWN, 50)
+        _tecla(VK_UP, round(v / 2))
+        return f"Volume em {v} por cento."
+    if re.search(r"mais|aument|sobe|alto", a):
+        _tecla(VK_UP, 5)
+    elif re.search(r"menos|abaix|diminu|baix", a):
+        _tecla(VK_DOWN, 5)
+    else:
+        return None
+    return "Pronto."
+
+
 def volume(arg, msg=""):
     a = fold(arg)
+    if WIN:
+        return _volume_win(a)
     sink = "@DEFAULT_AUDIO_SINK@"
     if re.search(r"\bmud|mute|silenc", a):
         subprocess.run(["wpctl", "set-mute", sink, "toggle"])
@@ -134,14 +192,19 @@ def _section(title):
 
 
 def _browser(url):
+    if WIN:
+        import webbrowser
+        webbrowser.open(url)
+        return
     _detach(["google-chrome-stable", url])
 
 
 def inventario():
     """Everything 'abrir' can open, id -> (name, how). Generated each time: install a game and it is there."""
-    out = {f"app:{i}": (name, ["gtk-launch", i]) for i, _, name in _apps()}
-    out.update({f"jogo:{i}": (name, ["xdg-open", f"steam://rungameid/{i}"]) for i, name in _jogos()})
-    out.update({f"site:{k}": (k, ["google-chrome-stable", url]) for k, url in _section("Sites").items()})
+    out = {f"app:{i}": (name, ["startfile", i] if WIN else ["gtk-launch", i]) for i, _, name in _apps()}
+    out.update({f"jogo:{i}": (name, ["startfile", f"steam://rungameid/{i}"] if WIN else ["xdg-open", f"steam://rungameid/{i}"])
+                for i, name in _jogos()})
+    out.update({f"site:{k}": (k, ["startfile", url] if WIN else ["google-chrome-stable", url]) for k, url in _section("Sites").items()})
     return dict(sorted(out.items()))   # stable order: the prompt prefix stays cacheable
 
 
@@ -189,6 +252,8 @@ def _gdbus(path, method, *args, dest="org.kde.ScreenBrightness"):
 
 
 def brilho(arg, msg=""):
+    if WIN:
+        return None          # no portable API for desktop monitors: Claude handles it
     a = fold(arg)
     n = re.search(r"\d+", a)
     step = 10 if re.search(r"mais|aument|sobe|clar", a) else -10 if re.search(r"menos|abaix|diminu|baix|escur", a) else None
@@ -220,6 +285,18 @@ def _players():
 
 def midia(arg, msg=""):
     a = fold(arg + " " + msg)
+    if WIN:
+        VK = {"Next": 0xB0, "Previous": 0xB1, "PlayPause": 0xB3}
+        if re.search(r"proxim|pula|avanca|next", a):
+            k, resp = "Next", "Próxima."
+        elif re.search(r"anterior|volta", a):
+            k, resp = "Previous", "Voltando."
+        elif re.search(r"paus|para|parar|toca|play|continu|despaus|retom", a):
+            k, resp = "PlayPause", "Pronto."
+        else:
+            return None
+        _tecla(VK[k])
+        return resp
     action = ("Next" if re.search(r"proxim|pula|avanca|next", a) else "Previous" if re.search(r"anterior|volta", a)
               else "Pause" if re.search(r"paus|para\b|parar", a) else "Play" if re.search(r"toca|play|continu|despaus|retom", a)
               else None)
@@ -232,6 +309,19 @@ def midia(arg, msg=""):
 
 def print_(arg, msg=""):
     a = fold(arg + " " + msg)
+    if WIN:
+        if re.search(r"area|regiao|pedaco|parte|janela", a):
+            import ctypes
+            for vk in (0x5B, 0x10, 0x53):
+                ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+            for vk in (0x53, 0x10, 0x5B):
+                ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
+            return "Selecione a área."
+        from PIL import ImageGrab
+        pasta = HOME / "Pictures" / "Capturas"
+        pasta.mkdir(parents=True, exist_ok=True)
+        ImageGrab.grab(all_screens=True).save(pasta / time.strftime("print-%Y%m%d-%H%M%S.png"))
+        return "Print salvo em Imagens, Capturas."
     mode = "-a" if "janela" in a else "-r" if re.search(r"area|regiao|pedaco|parte", a) else "-f"
     pasta = pathlib.Path(subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True).stdout.strip() or HOME) / "Capturas"
     pasta.mkdir(parents=True, exist_ok=True)
@@ -264,8 +354,15 @@ def timer(arg, msg=""):
     m = re.search(r"\b(pra|para|de)\s+(?!\d)(.+)$", fold(msg))
     motivo = m.group(2) if m and not duracao(m.group(2)) else ""
     aviso = f"Hora de {motivo}." if motivo else "Seu timer terminou."
-    # systemd keeps it even if Fedora restarts; argv only (never a shell): the text came from the microphone
-    r = subprocess.run(["systemd-run", "--user", "--collect", f"--on-active={secs}", "--timer-property=AccuracySec=1s",
+    # argv only (never a shell): the text came from the microphone
+    if WIN:
+        import sys
+        subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("speech.py")), "--aviso-em", str(secs), aviso],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        r = subprocess.CompletedProcess([], 0)
+    else:
+      r = subprocess.run(["systemd-run", "--user", "--collect", f"--on-active={secs}", "--timer-property=AccuracySec=1s",
                         "--unit", f"fedora-timer-{int(time.time())}", "/usr/bin/python3",
                         str(pathlib.Path(__file__).with_name("speech.py")), "--aviso", aviso], capture_output=True, timeout=10)
     if r.returncode:

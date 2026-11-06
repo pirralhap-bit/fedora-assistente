@@ -157,12 +157,9 @@ def _run_locked(message, session_id=None, system=None, full=True):
 
     env = dict(os.environ)
     home = os.path.expanduser("~")
-    env["PATH"] = ":".join(dict.fromkeys([
-        env.get("PATH", ""), os.path.join(home, ".local", "bin"),
-        "/opt/homebrew/bin", "/usr/local/bin",
-        os.path.join(home, ".npm-global", "bin"),
-        "/usr/bin", "/bin", "/usr/sbin", "/sbin",
-    ]))
+    extra = [os.path.join(home, ".local", "bin"), os.path.join(home, ".npm-global", "bin")]
+    extra += [os.path.join(os.environ.get("APPDATA", ""), "npm")] if os.name == "nt" else         ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+    env["PATH"] = os.pathsep.join(dict.fromkeys([env.get("PATH", ""), *extra]))
 
     try:
         proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, bufsize=1,
