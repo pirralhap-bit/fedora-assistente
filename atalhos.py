@@ -116,11 +116,11 @@ def _apps():
 _STEAM = pathlib.Path(os.environ.get("STEAM_DIR") or (r"C:\Program Files (x86)\Steam" if WIN else HOME / ".var/app/com.valvesoftware.Steam/.local/share/Steam"))
 def _jogos():
     """(appid, name) of installed Steam games, every library, without Proton/runtimes."""
-    libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(errors="replace")) \
+    libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(encoding="utf-8", errors="replace")) \
         if (_STEAM / "steamapps/libraryfolders.vdf").exists() else []
     for lib in libs or [str(_STEAM)]:
         for f in glob.glob(lib + "/steamapps/appmanifest_*.acf"):
-            t = pathlib.Path(f).read_text(errors="replace")
+            t = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
             appid, name = re.search(r'"appid"\s+"(\d+)"', t), re.search(r'"name"\s+"([^"]+)"', t)
             if appid and name and not re.search(r"proton|runtime|redistributable", name.group(1), re.I):
                 yield appid.group(1), name.group(1)

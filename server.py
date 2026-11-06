@@ -55,7 +55,7 @@ def _token():
         d = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
     f = d / "fedora-assistente.token"
     try:
-        tok = f.read_text().strip()
+        tok = f.read_text(encoding="utf-8").strip()
         if len(tok) >= 32:
             return tok
     except OSError:
@@ -63,7 +63,7 @@ def _token():
     tok = secrets.token_urlsafe(32)
     try:
         fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(tok)
     except OSError:
         pass   # no runtime dir: fall back to a per-process token

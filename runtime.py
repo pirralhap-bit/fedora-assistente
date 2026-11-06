@@ -33,7 +33,12 @@ DENY = ["Bash(shutdown:*)", "Bash(poweroff:*)", "Bash(reboot:*)", "Bash(halt:*)"
         "Bash(systemctl poweroff:*)", "Bash(systemctl reboot:*)", "Bash(systemctl halt:*)",
         "Bash(systemctl suspend:*)", "Bash(systemctl hibernate:*)", "Bash(loginctl poweroff:*)",
         "Bash(loginctl reboot:*)", "Bash(rm:*)", "Bash(shred:*)",
-        "Bash(mkfs:*)", "Bash(dd:*)"]
+        "Bash(mkfs:*)", "Bash(dd:*)",
+        # Windows
+        "Bash(shutdown.exe:*)", "Bash(Stop-Computer:*)", "Bash(Restart-Computer:*)", "Bash(rundll32:*)",
+        "Bash(del:*)", "Bash(erase:*)", "Bash(rmdir:*)", "Bash(rd:*)", "Bash(Remove-Item:*)",
+        "Bash(format:*)", "Bash(diskpart:*)", "Bash(cipher:*)", "Bash(powershell*Stop-Computer*)",
+        "Bash(powershell*Restart-Computer*)", "Bash(powershell*Remove-Item*)", "Bash(cmd*shutdown*)"]
 # Light mode (measured 2026-11-05: 26k -> 10.5k tokens of fixed context). ToolSearch must stay:
 # without it the MCP tools (Gmail, Drive, Chrome) load in full instead of deferred (17k measured).
 LIGHT = ["--disable-slash-commands",
@@ -81,15 +86,16 @@ def _claude_base():
     exe = shutil.which("claude")
     if exe:
         return [exe]
-    local = os.path.expanduser("~/.local/bin/claude")
-    if os.path.exists(local):
-        return [local]
+    for local in (os.path.expanduser("~/.local/bin/claude.exe"), os.path.expanduser("~/.local/bin/claude"),
+                  os.path.join(os.environ.get("APPDATA", ""), "npm", "claude.cmd")):
+        if os.path.exists(local):
+            return [local]
     return ["claude"]
 
 
 def _can_launch():
     try:
-        p = subprocess.run(_claude_base() + ["--version"], cwd=WORKDIR, text=True,
+        p = subprocess.run(_claude_base() + ["--version"], cwd=WORKDIR, text=True, encoding="utf-8", errors="replace",
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
         return p.returncode == 0, (p.stdout or p.stderr).strip()
     except Exception as e:  # noqa: BLE001
@@ -162,7 +168,8 @@ def _run_locked(message, session_id=None, system=None, full=True):
     env["PATH"] = os.pathsep.join(dict.fromkeys([env.get("PATH", ""), *extra]))
 
     try:
-        proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, bufsize=1,
+        env["PYTHONUTF8"] = "1"
+        proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         with _ACTIVE_LOCK:
             _ACTIVE_PROC = proc
@@ -314,7 +321,12 @@ def _run_locked(message, session_id=None, system=None, full=True):
                            ms=ev.get("duration_ms") or int((time.monotonic() - started) * 1000))
                 return
 
-        rc = proc.wait(timeout=5)
+        try:
+            rc = proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            # stdout closed but the process lingers (cleanup/hooks); don't fail a finished answer
+            proc.kill()
+            rc = 0 if text_seen else -1
         if rc != 0:
             yield dict(t="error", message=(" | ".join(list(errbuf)[-6:])
                                            or f"claude exited with code {rc}")[:500])

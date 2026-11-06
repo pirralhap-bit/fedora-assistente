@@ -225,7 +225,8 @@ class Ear:
 
     def _open_window(self):
         try:
-            subprocess.Popen(shlex.split(APP_CMD.format(url=APP_URL), posix=not WIN), stdout=subprocess.DEVNULL,
+            args = [a.strip('"') for a in shlex.split(APP_CMD.format(url=APP_URL), posix=not WIN)]
+            subprocess.Popen(args, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
             pass

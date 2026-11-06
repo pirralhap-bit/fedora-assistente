@@ -20,7 +20,7 @@ def ready():
 
 def _rate():
     try:
-        with open(VOICE + ".json") as f:
+        with open(VOICE + ".json", encoding="utf-8") as f:
             return json.load(f)["audio"]["sample_rate"]
     except (OSError, KeyError, ValueError):
         return 22050
