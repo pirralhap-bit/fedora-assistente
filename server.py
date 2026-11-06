@@ -363,6 +363,11 @@ def main():
     srv.daemon_threads = True
     if os.environ.get("FEDORA_EAR", "1") != "0":
         listener.EAR.start()
+    if os.environ.get("FEDORA_ORB", "1") != "0" and os.name == "nt":
+        import subprocess
+        py = str(ROOT / ".venv" / "Scripts" / "pythonw.exe")   # o do venv: tem numpy
+        subprocess.Popen([py if os.path.exists(py) else sys.executable, str(ROOT / "orb.py")],
+                         creationflags=0x08000000)   # CREATE_NO_WINDOW; o orb encerra sozinho quando o servidor cai
     if os.environ.get("JARVIS_OPEN", "1") != "0":
         webbrowser.open(f"http://localhost:{PORT}")
     try:
