@@ -1,10 +1,30 @@
 # Fedora
 
-Assistente de voz local para Windows 11. Um buraco negro (na janela e flutuando na tela) que ouve quando você pede, com o sistema e o vault orbitando, e uma página de notas diárias com ditado. O cérebro é o `claude` CLI (assinatura, sem chave de API); a transcrição é o faster-whisper local; atalhos rápidos e a reescrita das notas são o Gemini (`GEMINI_API_KEY` no `.env`). Tudo roda em `127.0.0.1`.
+Assistente de voz local, com duas versões: **Windows 11** (esta branch, `master`, a mantida) e **Linux** (branch `linux`, congelada). Um buraco negro (na janela e flutuando na tela) que ouve quando você pede, com o sistema e o vault orbitando, e uma página de notas diárias com ditado. O cérebro é o `claude` CLI (assinatura, sem chave de API); a transcrição é o faster-whisper local; atalhos rápidos e a reescrita das notas são o Gemini (`GEMINI_API_KEY` no `.env`). Tudo roda em `127.0.0.1`.
 
 Base: fork de jarvis-claude-code (98b1972), com a interface trocada.
 
-## Rodar
+## Versões e instalação
+
+| Sistema | Onde está | Estado |
+|---|---|---|
+| **Windows 11** | branch `master` (esta) | mantida e testada (`tools\testa.ps1`) |
+| **Linux** (feita no Fedora + KDE/Wayland) | branch `linux` (`git checkout linux`) | congelada no último commit que rodava lá; serviços systemd de usuário, whisper.cpp, `pw-play` |
+| macOS | não existe | trate como porte a partir do Linux |
+
+As duas têm a mesma arquitetura (servidor local, ouvido, whisper, Piper, `claude -p`, Gemini); mudam o áudio, o STT, o lançador, os atalhos do sistema e o modo de subir no login. Por isso **não há instalador único**: a IA que a pessoa usar (Claude Code ou outra) deve configurar a instalação conforme o sistema dela.
+
+### Roteiro para a IA que vai instalar
+
+1. **Descubra o sistema** (`$env:OS` / `uname -a`, `echo $XDG_SESSION_TYPE`, gerenciador de pacotes) e **escolha a branch**: Windows → `master`; Linux → `git checkout linux`; outro → pergunte, e proponha um porte partindo da `linux`.
+2. **Não invente caminhos nem versões.** Veja o que já está instalado (Python 3.12, git, `claude`, Piper, microfone/saída de áudio) e instale só o que falta, confirmando com a pessoa o que mexer fora da pasta do projeto.
+3. **Windows**: `py -3.12 -m venv .venv`; `.venv\Scripts\pip install -r requirements.txt`; `copy .env.example .env`; Piper e uma voz pt_BR em `%LOCALAPPDATA%\fedora-assistente\piper` e `voices`; `claude` CLI instalado e logado; depois `.\iniciar.ps1` e `.\tools\testa.ps1`.
+4. **Linux** (branch `linux`): venv com `requirements.txt`; whisper.cpp compilado (Vulkan opcional) em `~/.local/opt/whisper.cpp`, modelo em `~/.local/share/whisper-models`, Piper em `~/.local/opt/piper`; `./deploy/instalar.sh` liga os serviços `whisper` e `fedora-assistente` (systemd de usuário) e cria o autostart e o item de menu; `./tools/testa.sh`. Os caminhos e `.desktop` vieram do Fedora/KDE: **adapte à distro e ao ambiente gráfico da pessoa** (outro gerenciador de pacotes, X11 em vez de Wayland, outro player de áudio no lugar do `pw-play`).
+5. **`.env`**: peça à pessoa a `GEMINI_API_KEY`, o caminho do vault do Obsidian (opcional) e a cidade do clima. Nunca grave segredo em arquivo versionado nem leia `.env` de volta no chat.
+6. **Não afrouxe a segurança**: a lista `DENY` (`runtime.py`) e as `PC_RULES` (`commands.py`) valem em qualquer sistema; se a versão Linux usar comandos diferentes (`rm`, `dd`, `shutdown`), confira se a `DENY` daquela branch cobre o que a pessoa tem.
+7. **Confirme ao final**: servidor em `http://127.0.0.1:8720`, falar uma frase de teste, autotestes passando. Se algo não existir no sistema dela, diga o que ficou de fora em vez de fingir que funciona.
+
+## Rodar no Windows
 
 ```powershell
 .\iniciar.ps1
