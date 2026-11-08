@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Fedora
-Comment=Assistente local (diga “Ok, Fedora”)
-Exec=google-chrome-stable --app=http://localhost:8720/
-Icon=audio-input-microphone
-Categories=Utility;

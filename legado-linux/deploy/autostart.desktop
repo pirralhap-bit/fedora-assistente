@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Fedora
-Comment=Assistente local (diga “Ok, Fedora”)
-# instalar.sh troca pelo caminho real do repositório
-Exec=abrir-janela.sh
-Icon=audio-input-microphone
-Categories=Utility;

@@ -1,4 +1,4 @@
-"""Gemini API (Google) for the two small jobs that used to run on Ollama: picking a shortcut and tidying the daily note.
+"""Gemini API (Google) for the two small jobs: picking a shortcut and tidying the daily note.
 
 Key and models come from .env: GEMINI_API_KEY (required), GEMINI_MODEL (notes), GEMINI_MODEL_RAPIDO (shortcuts).
 """

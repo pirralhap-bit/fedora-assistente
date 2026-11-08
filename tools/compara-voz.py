@@ -1,5 +1,5 @@
 """Compare speech models on saved clips: python3 tools/compara-voz.py <pasta-com-wav>. Text + time per clip and model.
-Servers: small :8178 (whisper_server.py), medium :8179, turbo :8180 (start them by hand, see docs/SESSAO-2026-11-03.md)."""
+Servers: small :8178 (whisper_server.py), medium :8179, turbo :8180 (start them by hand with whisper_server.py, WHISPER_MODEL and WHISPER_PORT)."""
 import pathlib, sys, time, wave
 import listener
 

@@ -97,7 +97,3 @@ Antes de qualquer chamada ao Gemini, `atalhos.pode_ir_ao_gemini(pedido)` decide,
 Se a política de execução bloquear: `powershell -ExecutionPolicy Bypass -File tools\testa.ps1`.
 
 Roda os autotestes offline de cada módulo e sai com código diferente de zero se algum falhar. Não chama o Gemini nem o Claude. `python atalhos.py` (completo) e `python tidy.py --gemini` usam o Gemini de verdade e ficam fora; rode à mão quando quiser.
-
-## Legado Linux
-
-A versão antiga (Fedora Linux: systemd, `.desktop`, `pw-play`, whisper.cpp na GPU) está em `legado-linux/`, sem manutenção. Veja `legado-linux/LEIAME.md`.
