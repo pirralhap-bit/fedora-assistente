@@ -17,11 +17,18 @@ MAX_TURNOS = int(os.environ.get("FEDORA_MAX_TURNOS", "10"))
 LEVE = os.environ.get("FEDORA_MODO_LEVE", "1") != "0"      # 0 = always the full Claude Code
 KEEP = 5
 GATILHOS = ("a fundo", "modo analista", "modo completo")
+# light tools + the Agent tool (+2.8k tokens, measured): only when the request is about delegating or reviewing
+GATILHOS_EQUIPE = ("equipe", "delegue", "delegar", "junior", "senior", "revisor", "peca ao qa", "mande o qa", "passe pro qa")
 
 
 def completo(message):
-    """True when this turn needs skills (B3, apostilas...)."""
-    return not LEVE or any(g in fold(message) for g in GATILHOS)
+    """Mode of this turn: True = full Claude Code (skills B3, apostilas...), "equipe" = light + subagents, False = light."""
+    m = fold(message)
+    if not LEVE or any(g in m for g in GATILHOS):
+        return True
+    if any(g in m for g in GATILHOS_EQUIPE):
+        return "equipe"
+    return False
 
 
 def continua(session, full, agora=None):
@@ -70,6 +77,8 @@ if __name__ == "__main__":
     FILE = pathlib.Path(tempfile.mkdtemp()) / "c.md"
     LEVE, JANELA, MAX_TURNOS = True, 900, 10
     assert not completo("quantos graus amanhã") and completo("Analisa a fundo a PETR4") and completo("modo analista")
+    assert completo("peça ao júnior para ajustar o README") == "equipe" and completo("delegue isso à equipe") == "equipe"
+    assert completo("faz isso a fundo com a equipe") is True
     s = dict(id="x", modo=False, ultima=1000, turnos=3)
     assert continua(s, False, agora=1500)
     assert not continua(s, False, agora=1000 + 900)            # window over

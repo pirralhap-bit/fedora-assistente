@@ -54,6 +54,8 @@ _XDG = {"download": "DOWNLOAD", "documento": "DOCUMENTS", "imagem": "PICTURES", 
 
 
 def _pasta(arg):
+    if re.search(r"\.\.|[\\/:]", arg):   # only known names or a plain folder of the home dir: HOME / "C:\x" is C:\x
+        return None
     a = re.sub(r"^(a |o |as |os |meus? |minhas? |pasta (de |do |da )?)+", "", fold(arg))
     if a in ("", "pessoal", "home", "casa", "inicio"):
         return HOME
@@ -404,19 +406,127 @@ HANDLERS = {f.__name__.rstrip("_"): f for f in (hora, data, abrir_pasta, abrir, 
                                                  midia, print_, timer, clima, sistema)}
 
 
+# ── filtro local: decide, sem rede, se o pedido pode sair do PC rumo ao Gemini ──
+# Duas portas, AMBAS necessárias, sobre o pedido normalizado (fold, sem pontuação, sem "aí"/"por favor"/"me" no começo):
+#   (a) FORMA de comando: a frase COMEÇA com um verbo/expressão de algum atalho ("abre", "sobe", "me avisa", "daqui a")
+#       ou é uma pergunta curta de atalho ("que horas", "vai chover", "como tá o tempo", "quanto de memória");
+#   (b) OBJETO compatível com esse atalho (volume/som, brilho/tela, música, print, uma duração, clima...).
+# Cada REGRA abaixo junta as duas: (atalho, começo, objeto ou None, máximo de palavras). "abrir" com um nome que o
+# catálogo não conhece também passa (o Gemini sabe que "orca" é OrcaSlicer), mas só se a frase for curta e sem cara
+# de conversa (_ABRIR_LIVRE). Pesquisa só passa com "no google/na internet" ou curta e sem nada pessoal (_PESQUISA_LIVRE).
+# Erro para o lado seguro: barrar um atalho custa um turno do Claude; deixar passar conversa manda a frase à rede.
+# `python atalhos.py --teste-filtro` mede os dois lados com as listas do QA (metas: >= 90 % e <= 20 %).
+MAX_PALAVRAS = 12
+_FILLER_INICIO = re.compile(r"^(?:ai|entao|ok|okay|beleza|fedora|ei|oi|olha|por favor|por gentileza|faz favor|"
+                            r"faca o favor de|da uma|voce pode|pode|consegue|quero que voce|so|me)\s+")
+_FILLER_FIM = re.compile(r"\s+(?:pra mim|por favor|faz favor|agora|ai)$")
+_DURACAO = (r"\b(?:\d+|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|quinze|vinte|trinta|quarenta|"
+            r"cinquenta|meia)\s*(?:horas?|h|minutos?|min|segundos?|seg)\b|\bmeia hora\b")
+_PASTAS = (r"\bpasta\b|\bdownloads?\b|\bdocumentos\b|\bimagens\b|\bfotos\b|\bmusicas\b|\bvideos\b|\barea de trabalho\b"
+           r"|\bdesktop\b|\bprojetos\b")
+_V_ABRIR = r"(?:abre|abra|abrir|inicia|inicie|iniciar|bota|bote|poe|ponha|liga|ligue|chama|chame|executa|execute|roda|rode|entra|entre|coloca|coloque|mostra|mostre)"
+REGRAS = [
+    ("hora", r"(?:que horas?|qual a hora|diz (?:as|a) horas?|fala (?:as|a) horas?|horas)\b", None, 6),
+    ("data", r"(?:que dia|que data|qual (?:e )?a data|hoje e dia|dia de hoje|em que dia)\b", None, 8),
+    ("abrir_pasta", _V_ABRIR + r"\b", _PASTAS, 8),
+    ("abrir", _V_ABRIR + r"\b", None, 0),                       # objeto: catálogo de sites (_sites) ou _ABRIR_LIVRE
+    ("pesquisar_web", r"(?:pesquis\w*|procur\w*|busc\w*|googl\w*|joga|poe|bota)\b", r"\b(?:no google|na internet|na web)\b", 12),
+    ("volume", r"(?:sobe|suba|aumenta|aumente|abaixa|abaixe|diminui|diminua|baixa)\b", r"\b(?:volume|som|audio|isso|\d+)\b", 8),
+    ("volume", r"(?:coloca|poe|bota|deixa) o (?:volume|som)\b", None, 8),
+    ("volume", r"(?:muta|mute|desmuta|silencia|silencie|volume|som|tira o som|(?:mais|menos) (?:alto|baixo)"
+               r"|(?:ta|esta) (?:muito )?(?:alto|baixo)|esse som|o som)\b", None, 6),
+    ("brilho", r"(?:aumenta|aumente|diminui|diminua|abaixa|abaixe|sobe|baixa|deixa|poe|coloca|brilho)\b",
+               r"\bbrilho\b|\btela (?:mais )?(?:clara|escura)\b", 8),
+    ("midia", r"(?:pausa|pause|pausar|despausa|pula|pule|proxima|avanca|retoma|play|anterior)\b", None, 5),
+    ("midia", r"(?:toca|toque|poe|bota|coloca|volta|continua|para)\b", r"\b(?:musica|tocar|tocando|faixa|spotify|proxima|anterior)\b", 8),
+    ("print", r"(?:printa|printe|print|captura|screenshot)\b", None, 8),
+    ("print", r"(?:tira|tire|manda|faz|faca)\b", r"\b(?:print|captura|screenshot|foto da tela)\b", 8),
+    ("timer", r"(?:avisa|lembra|acorda|desperta|timer|cronometro|lembrete|daqui|em|(?:poe|coloca|bota) um (?:timer|cronometro))\b",
+              _DURACAO, 12),
+    ("clima", r"(?:(?:hoje|amanha|agora) )?(?:vai (?:chover|esfriar|esquentar|fazer (?:frio|calor|sol)|dar sol|ter sol)|chove"
+              r"|esfria|esquenta|faz sol|(?:ta|esta) (?:chovendo|quente|frio|calor|garoando)"
+              r"|como (?:ta|esta|vai (?:estar|ficar)|fica) o (?:tempo|clima)|(?:o )?tempo (?:amanha|hoje|agora|em|la fora)"
+              r"|olhada no tempo|previsao|qual (?:e )?a (?:temperatura|previsao)|quantos graus|temperatura|clima (?:em|de|hoje|amanha))\b",
+              None, 10),
+    ("sistema", r"(?:como (?:ta|esta) o (?:sistema|pc|computador)|status do sistema|mostra o sistema)$", None, 5),
+    ("sistema", r"(?:quanto de (?:memoria|ram|cpu|gpu|placa de video|processador)|uso de (?:memoria|ram|cpu|gpu))\b", None, 8),
+]
+_REGRAS = [(n, re.compile(c), re.compile(o) if o else None, w) for n, c, o, w in REGRAS]
+# um nome que o catálogo não conhece só passa em frase curta e sem cara de conversa/dado pessoal
+_ABRIR_LIVRE = {"abre": 6, "abra": 6, "abrir": 6, "inicia": 6, "inicie": 6, "iniciar": 6, "bota": 6, "bote": 6,
+                "liga": 4, "ligue": 4, "chama": 4, "chame": 4, "executa": 4, "execute": 4, "roda": 4, "rode": 4,
+                "entra": 4, "entre": 4}
+_CONVERSA = set("que sobre quando porque se como um uma uns umas pro pra para com contato meu minha meus minhas seu sua "
+                "nota notas vault arquivo arquivos email chamado".split())
+_PESQUISA_LIVRE = 7          # "pesquisa preço do PLA": sem "no google", só curta e sem nada pessoal (_CONVERSA)
+_SITES = []
+
+
+def _sites():
+    if not _SITES:
+        _SITES.extend(_section("Sites") or ["-"])
+    return _SITES
+
+
+def normaliza_pedido(msg):
+    """fold + sem pontuação + sem as muletas do começo/fim ("aí", "por favor", "me", "pra mim")."""
+    m = " ".join(re.sub(r"[^\w\s]", " ", fold(msg)).split())
+    m = re.sub(r"\bai\b", " ", m).split()
+    m = " ".join(m)
+    while True:
+        n = _FILLER_FIM.sub("", _FILLER_INICIO.sub("", m))
+        if n == m:
+            return m
+        m = n
+
+
+def pode_ir_ao_gemini(msg):
+    """Pura e offline: True se o pedido pode ir ao Gemini escolher um atalho; False = direto ao Claude, sem rede."""
+    m = normaliza_pedido(msg)
+    ws = m.split()
+    if not 0 < len(ws) <= MAX_PALAVRAS:
+        return False
+    for nome, comeco, objeto, maxw in _REGRAS:
+        c = comeco.match(m)
+        if not c:
+            continue
+        resto = m[c.end():]
+        if nome == "abrir":
+            if any(re.search(rf"\b{re.escape(s)}\b", resto) for s in _sites()) and len(ws) <= 8:
+                return True
+            if len(ws) <= _ABRIR_LIVRE.get(ws[0], 0) and len(ws) >= 2 and not _CONVERSA & set(ws):
+                return True
+            continue
+        if len(ws) <= maxw and (objeto is None or objeto.search(m)):
+            return True
+    return bool(re.match(r"(?:pesquis|procur|busc)\w*\b", m)) and len(ws) <= _PESQUISA_LIVRE and not _CONVERSA & set(ws)
+
+
 # ── routing ──
-def classify(message):
-    """Ask Gemini which shortcut this is. Slow or offline: no fast path, Claude takes it."""
+def classify(message, info=None):
+    """Ask Gemini which shortcut this is. Slow or offline: no fast path, Claude takes it.
+    7.5 s in total, and after a failure the circuit breaker (llm.json_call disjuntor=True) skips Gemini for 5 minutes.
+    info (optional dict) gets gemini = ok|disjuntor|fora, ms_gemini and disjuntor_abriu (this call switched it off)."""
+    info = info if isinstance(info, dict) else {}
     if not llm.ready():
+        info["gemini"] = "fora"
         return None
-    prompt = (CATALOG.read_text(encoding="utf-8") +
-              '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum".\n'
-              'Responda só JSON: {"atalho": "<nome exato da lista>", "arg": "<texto ou vazio>"}\n'
-              f"Pedido: {message}")
+    if llm.disjuntor_aberto():
+        info["gemini"] = "disjuntor"
+        return None
+    t0 = time.monotonic()
     try:
-        out = llm.json_call(prompt, llm.MODEL_RAPIDO, timeout=7.5, temperature=0)
-    except llm.LLMError:
+        prompt = (CATALOG.read_text(encoding="utf-8") +
+                  '\nEscolha UM atalho acima para o pedido. Se não for claramente um deles, use "nenhum".\n'
+                  'Responda só JSON: {"atalho": "<nome exato da lista>", "arg": "<texto ou vazio>"}\n'
+                  f"Pedido: {message}")
+        out = llm.json_call(prompt, llm.MODEL_RAPIDO, timeout=7.5, temperature=0, disjuntor=True)
+    except Exception:  # noqa: BLE001 — anything wrong here only costs the fast path
+        info.update(gemini="fora", ms_gemini=int((time.monotonic() - t0) * 1000))
+        if llm.disjuntor_aberto():
+            info["disjuntor_abriu"] = True
         return None
+    info.update(gemini="ok", ms_gemini=int((time.monotonic() - t0) * 1000))
     if not isinstance(out, dict):
         return None
     name = re.sub(r"\W.*", "", str(out.get("atalho") or "").strip())     # "abrir_app(chrome)" -> "abrir_app"
@@ -425,7 +535,7 @@ def classify(message):
 
 
 # the model picks, the code double-checks: a pick whose verb isn't in the sentence goes to Claude
-_ABRIR = r"\b(abr|entr|inici|execut|rod|lig|bot|coloc|mostr)"
+_ABRIR = r"\b(abr|entr|inici|execut|rod|lig|bot|coloc|mostr|cham)"   # "chama o chrome" (QA, lote E)
 GUARD = {"abrir": _ABRIR, "abrir_pasta": _ABRIR,
          "pesquisar_web": r"\b(pesquis|procur|busc|googl)"}
 _NUNCA = r"\b(fech|encerr|mat[ae]|sai[rd]|apag|delet|remov|exclu|deslig)"
@@ -438,47 +548,157 @@ def _confere(name, message):
     return True
 
 
-def route(message):
-    """Spoken reply if a shortcut handled the request, else None (Claude takes it)."""
-    picked = classify(message)
+def route(message, info=None):
+    """Spoken reply if a shortcut handled the request, else None (Claude takes it).
+    info (optional dict, for turnolog): filtrado (the local filter kept it off the network), gemini
+    (ok|disjuntor|fora|nao_usado), ms_gemini, disjuntor_abriu, atalho (name, only when it answered)."""
+    info = info if isinstance(info, dict) else {}
+    if not pode_ir_ao_gemini(message):
+        info.update(filtrado=True, gemini="nao_usado")
+        return None
+    info["filtrado"] = False
+    picked = classify(message, info)
     if not picked or picked[0] not in HANDLERS or not _confere(picked[0], message):
         return None
     name, arg = picked
     try:
         reply = HANDLERS[name](arg, message)
-    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, AttributeError, TypeError):
+    except Exception as e:  # noqa: BLE001 — ImportError (PIL), JSON from a web API...: Claude takes it
+        print(f"[atalho] {name}({arg!r}) falhou: {type(e).__name__}: {str(e)[:120]}", flush=True)
         return None
     if reply:
+        info["atalho"] = name
         print(f"[atalho] {message!r} -> {name}({arg!r})", flush=True)
     return reply
 
 
+# conversa comum que o filtro local deve segurar no PC (não é atalho; nada disso vai ao Gemini)
+CONVERSA_COMUM = ["me explica o extrato do meu banco", "escreve um email pro cliente", "o que você acha da PETR4 hoje",
+                  "resume a nota de ontem", "qual meu saldo", "cria um arquivo lista.txt",
+                  "escreve um e-mail pro cliente da Isabella", "qual o saldo do meu pix", "resume a nota de ontem do vault",
+                  "quanto tempo leva pra imprimir um vaso", "faz um vídeo curto sobre o sol", "qual o uso de PLA por peça",
+                  "bom dia Fedora", "volta pro que a gente falava", "continua a explicação", "muda o tom do texto",
+                  "você lembra do que falamos?", "o que tem na tela do relatório",
+                  "analisa a fundo o mercado de hoje", "quanto custa o PLA hoje?"]
+
+
+def _exemplos_md():
+    """The quoted examples after "Ex.:" in the shortcut lines of atalhos.md (the arg descriptions are not examples)."""
+    out = []
+    for nome, linha in re.findall(r"^- `(\w+)`[^\n]*?Ex\.:([^\n]*)", CATALOG.read_text(encoding="utf-8"), flags=re.M):
+        out += [(e, nome) for e in re.findall(r'"([^"]+)"', linha)]
+    return out
+
+
+# listas do QA (lote E). Frases naturais de atalho; as 3 de QA_FORA_DO_CATALOGO não são atalho de verdade (disco livre,
+# hora em outro fuso, alarme num horário: nenhum handler faz) e ficam fora das métricas.
+QA_ATALHOS = ["abre aí o discord", "dá uma olhada no tempo amanhã", "sobe o som", "põe pra tocar", "quanto de memória tá usando",
+              "tira print da tela inteira", "me lembra de ligar pro João daqui a 20 minutos", "pausa", "próxima", "silencia",
+              "que dia é hoje", "amanhã chove?", "abre o steam", "bota o cs", "lembrete em meia hora",
+              "aumenta o volume", "diminui o brilho", "que horas são", "pula essa música", "volta a música", "tá muito alto",
+              "deixa a tela mais clara", "tira uma foto da tela", "daqui a 5 min me avisa", "me acorda em dez min",
+              "tá quente lá fora", "retoma a música", "para de tocar", "me avisa em meia hora", "põe um timer de 10 minutos",
+              "liga o spotify", "abaixa isso", "manda um print", "esse som tá baixo", "como tá o PC", "quanto de GPU tô usando",
+              "vai esfriar amanhã?", "joga no google receita de bolo", "tá chovendo?", "vai dar sol amanhã",
+              "mostra a pasta downloads", "abre a pasta de documentos", "continua a música", "avança pra próxima", "mais alto",
+              "chama o chrome", "lembra de beber água em uma hora", "coloca uma música"]
+QA_FORA_DO_CATALOGO = ["quanto de disco livre eu tenho", "que horas são em Tóquio", "coloca um alarme pras 7"]
+QA_DEVEM_PASSAR = ["dá uma olhada no tempo amanhã", "daqui a 5 min me avisa", "me acorda em dez min", "vai esfriar amanhã?",
+                   "vai dar sol amanhã", "chama o chrome", "deixa a tela mais clara", "tira uma foto da tela"]
+QA_DEVEM_BARRAR = ["abre um chamado sobre o erro do cliente Itaú", "o João me ligou hoje às 10 horas sobre o empréstimo",
+                   "mostra meu saldo do nubank", "busca no vault minhas anotações de saúde",
+                   "rodei o exame e a taxa de colesterol hoje deu 240", "me explica como funciona a memória RAM",
+                   "pesquisa o que significa essa cláusula do meu contrato", "entra em contato com a Maria sobre o processo",
+                   "como tá o sistema do meu plano de saúde", "coloca no email que o som do vídeo estava ruim"]
+QA_CONVERSA = ["que horas você acha que eu devo acordar amanhã pra treinar", "minha senha do banco é 1234 salva aí",
+               "o que eu faço quando a hora do almoço acaba", "me explica como funciona a memória RAM",
+               "abre um chamado sobre o erro do cliente Itaú", "bota fé que o projeto sai",
+               "escreve o que eu tenho que fazer hoje no dia da semana", "pesquisa o que significa essa cláusula do meu contrato",
+               "o João me ligou hoje às 10 horas sobre o empréstimo", "coloca no email que o som do vídeo estava ruim",
+               "busca no vault minhas anotações de saúde", "mostra meu saldo do nubank", "lembra de pagar o boleto em 2 dias",
+               "qual o clima da reunião com meu chefe", "entra em contato com a Maria sobre o processo",
+               "como tá o sistema do meu plano de saúde", "resumo da conversa do meu médico hoje",
+               "rodei o exame e a taxa de colesterol hoje deu 240", "execute a sentença do processo",
+               "o play do jogo trava o computador"]
+META_PASSAM, META_VAZA = 0.90, 0.20
+
+
+def _teste_filtro(cases):
+    """Offline (no network). Measures both sides; the targets are asserted, the numbers are printed either way."""
+    import sys
+    sys.stdout.reconfigure(errors="replace")
+    legit = [m for m, w in cases + _exemplos_md() if w != "nenhum"] + QA_ATALHOS
+    barradas = [m for m in legit if not pode_ir_ao_gemini(m)]
+    conversa = QA_CONVERSA + [c for c in CONVERSA_COMUM if c not in QA_CONVERSA]
+    vazam = [m for m in conversa if pode_ir_ao_gemini(m)]
+    passam = 1 - len(barradas) / len(legit)
+    print(f"filtro: legítimas que passam {len(legit) - len(barradas)}/{len(legit)} ({passam:.0%}); "
+          f"conversa que vaza {len(vazam)}/{len(conversa)} ({len(vazam) / len(conversa):.0%}); "
+          f"só a do QA: {sum(pode_ir_ao_gemini(m) for m in QA_CONVERSA)}/{len(QA_CONVERSA)}")
+    print(f"  legítimas barradas: {barradas}")
+    print(f"  conversa que vaza: {vazam}")
+    print(f"  fora do catálogo (sem métrica): {[(m, pode_ir_ao_gemini(m)) for m in QA_FORA_DO_CATALOGO]}")
+    assert all(pode_ir_ao_gemini(m) for m in QA_DEVEM_PASSAR), [m for m in QA_DEVEM_PASSAR if not pode_ir_ao_gemini(m)]
+    assert not any(pode_ir_ao_gemini(m) for m in QA_DEVEM_BARRAR), [m for m in QA_DEVEM_BARRAR if pode_ir_ao_gemini(m)]
+    assert passam >= META_PASSAM and len(vazam) / len(conversa) <= META_VAZA, (passam, vazam)
+    assert not pode_ir_ao_gemini("") and not pode_ir_ao_gemini("abre " + "o chrome " * 6)   # > MAX_PALAVRAS
+    # frases que não estavam nas listas usadas para desenhar as regras (checagem de generalização, lote E)
+    novas = {"abre o notepad": True, "aumenta o som pra 50": True, "qual a previsão pra amanhã": True, "pausa o vídeo": True,
+             "toca a próxima": True, "coloca o volume em 30": True, "entra no youtube": True, "abre o gmail": True,
+             "me avisa daqui a 2 horas pra tomar remédio": True, "liga pro meu irmão": False, "abre o meu banco": False,
+             "abre a conversa com a Ana": False, "me fala uma piada": False, "minha nota fiscal do mês": False}
+    assert all(pode_ir_ao_gemini(m) == v for m, v in novas.items()), [m for m, v in novas.items() if pode_ir_ao_gemini(m) != v]
+    info = {}
+    assert route("me explica o extrato do meu banco", info) is None and info == {"filtrado": True, "gemini": "nao_usado"}
+    print("filtro ok (offline)")
+
+
 if __name__ == "__main__":
+    import sys
+    # routing with the real model: every phrase must land on the right shortcut (handlers not run)
+    def _k(nome):   # inventory id of an installed app by its menu name (Windows ids are .lnk paths)
+        return next(k for k, v in inventario().items() if v[0] == nome)
+    comuns = [("que horas são", "hora"), ("me diz as horas", "hora"), ("que dia é hoje?", "data"),
+              ("abre meus downloads", "abrir_pasta"), ("aumenta o volume", "volume"),
+              ("volume 30", "volume"), ("como está o sistema", "sistema"),
+              ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "clima"), ("vai chover hoje?", "clima"),
+              ("abre o youtube", "abrir:site:youtube"), ("abre o trilhear", "abrir:site:trailhead"),
+              ("abre o whatsapp", "abrir:site:whatsapp"), ("pesquisa preço do PLA", "pesquisar_web"), ("tira um print", "print"),
+              ("brilho 50", "brilho"), ("pausa a música", "midia"), ("pula essa", "midia"), ("timer de 20 minutos", "timer"),
+              ("me avisa em 1 hora pra tirar a peça da impressora", "timer"), ("quanto custa o PLA hoje?", "nenhum"),
+              ("desliga o computador", "nenhum"),
+              ("apaga o arquivo teste.txt", "nenhum"), ("cria um arquivo lista.txt", "nenhum")]
+    if WIN:   # ids/names that exist in this machine's Windows inventory (Start Menu .lnk, Steam games); absent apps -> "nenhum"
+        cases = comuns + [("abre o gta", "abrir:jogo:271590"), ("bota o cs2", "abrir:jogo:730"),
+                          ("abre o explorador", "abrir:" + _k("File Explorer")),
+                          ("abre o obsidiana", "abrir:" + _k("Obsidian")), ("abre a steam", "abrir:" + _k("Steam")),
+                          ("abre o discord", "abrir:" + _k("Discord")),
+                          ("abre o gerenciador de tarefas", "abrir:" + _k("Task Manager")),
+                          ("abre o prompt de comando", "abrir:" + _k("Command Prompt")),
+                          ("abre o orca slicer", "nenhum"), ("fecha o chrome", "nenhum")]   # orca not installed here
+    else:
+        cases = comuns + [("abre o chrome pra mim", "abrir:app:google-chrome"), ("abre o gta", "abrir:jogo:3240220"),
+                          ("bota o cs2", "abrir:jogo:730"), ("abre o cities skylines 2", "abrir:jogo:949230"),
+                          ("abre o espectáculo", "abrir:app:org.kde.spectacle"), ("abre o console", "abrir:app:org.kde.konsole"),
+                          ("abre o obsidiana", "abrir:app:md.obsidian.Obsidian"), ("abre a steam", "abrir:app:com.valvesoftware.Steam"),
+                          ("abre a calculadora", "abrir:app:org.kde.kcalc"),
+                          ("abre o orca slicer", "abrir:app:com.orcaslicer.OrcaSlicer"), ("fecha o chrome", "nenhum")]
+    if "--teste-filtro" in sys.argv:
+        _teste_filtro(cases)
+        sys.exit(0)
     # handlers (no Gemini needed)
     assert hora("").startswith("São ") and data("").startswith("Hoje é ")
     assert _pasta("meus downloads") and _pasta("meus downloads").is_dir()
     assert _pasta("pasta projetos") == HOME / "Projetos", _pasta("pasta projetos")
     assert _pasta("xyz inexistente") is None
+    for fora in ("..", "../Public", "Projetos/..", "Projetos\\fedora-assistente", "C:\\Windows", "C:", "/etc"):
+        assert _pasta(fora) is None and abrir_pasta(fora) is None, fora
     inv = inventario()
-    assert "app:google-chrome" in inv and "site:youtube" in inv and any(k.startswith("jogo:") for k in inv)
+    assert ("app:google-chrome" in inv if not WIN else any(v[0] == "Steam" for v in inv.values()))         and "site:youtube" in inv and any(k.startswith("jogo:") for k in inv)
     assert duracao("20 minutos") == 1200 and duracao("1 hora e meia") == 5400 and duracao("meia hora") == 1800
     assert duracao("uma hora e 15 minutos") == 4500 and duracao("tirar a peça") is None
     assert _section("Sites")["trailhead"].startswith("https://")
-    # routing with the real model: every phrase must land on the right shortcut (handlers not run)
-    cases = [("que horas são", "hora"), ("me diz as horas", "hora"), ("que dia é hoje?", "data"),
-             ("abre meus downloads", "abrir_pasta"), ("abre o chrome pra mim", "abrir:app:google-chrome"), ("aumenta o volume", "volume"),
-             ("volume 30", "volume"), ("como está o sistema", "sistema"),
-             ("quanto é 17 vezes 23?", "nenhum"), ("como vai estar o tempo amanhã?", "clima"), ("vai chover hoje?", "clima"),
-             ("abre o youtube", "abrir:site:youtube"), ("abre o gta", "abrir:jogo:3240220"), ("bota o cs2", "abrir:jogo:730"),
-             ("abre o cities skylines 2", "abrir:jogo:949230"), ("abre o espectáculo", "abrir:app:org.kde.spectacle"),
-             ("abre o console", "abrir:app:org.kde.konsole"), ("abre o obsidiana", "abrir:app:md.obsidian.Obsidian"),
-             ("abre o trilhear", "abrir:site:trailhead"), ("abre o whatsapp", "abrir:site:whatsapp"),
-             ("abre a steam", "abrir:app:com.valvesoftware.Steam"), ("abre a calculadora", "abrir:app:org.kde.kcalc"),
-             ("abre o orca slicer", "abrir:app:com.orcaslicer.OrcaSlicer"), ("pesquisa preço do PLA", "pesquisar_web"), ("tira um print", "print"),
-             ("brilho 50", "brilho"), ("pausa a música", "midia"), ("pula essa", "midia"), ("timer de 20 minutos", "timer"),
-             ("me avisa em 1 hora pra tirar a peça da impressora", "timer"), ("quanto custa o PLA hoje?", "nenhum"),
-             ("desliga o computador", "nenhum"),
-             ("apaga o arquivo teste.txt", "nenhum"), ("fecha o chrome", "nenhum"), ("cria um arquivo lista.txt", "nenhum")]
+    _teste_filtro(cases)
     if llm.ready():
         def pick(m):
             c = classify(m)

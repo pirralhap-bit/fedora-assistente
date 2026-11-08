@@ -13,3 +13,4 @@ state.json
 .venv/
 graphify-out/
 .playwright-mcp/
+logs/

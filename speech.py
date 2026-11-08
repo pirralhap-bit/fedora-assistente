@@ -1,4 +1,4 @@
-"""Fedora's voice: Piper (local TTS) streamed straight to the speakers with pw-play."""
+"""Fedora's voice: Piper (local TTS) streamed straight to the speakers (Windows: sounddevice via _Saida; Linux: pw-play)."""
 import json
 import os
 import re
@@ -85,7 +85,7 @@ class _Saida:
 def _play(text, then=None):
     tts = subprocess.Popen([PIPER, "-m", VOICE, "--output_raw"], stdin=subprocess.PIPE,
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    # --raw: without it pw-play tries to sniff a file format on stdin and fails silently
+    # Windows plays through _Saida (sounddevice); Linux pw-play needs --raw: without it pw-play tries to sniff a file format on stdin and fails silently
     if WIN:
         play = _Saida(tts.stdout, _rate())
     else:
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         import time
         time.sleep(float(sys.argv[2]))
         sys.argv[1:3] = ["--aviso"]
-    if sys.argv[1:2] == ["--aviso"]:   # fired by a timer (atalhos.timer via systemd-run)
+    if sys.argv[1:2] == ["--aviso"]:   # Linux timer (atalhos.timer via systemd-run); on Windows --aviso-em above (detached Popen)
         msg = " ".join(sys.argv[2:]) or "Seu timer terminou."
         if not WIN:
             subprocess.run(["notify-send", "-a", "Fedora", "-u", "critical", "Fedora", msg])

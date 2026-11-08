@@ -71,7 +71,17 @@ def _tokens_block():
             + "\nA pergunta atual ainda não tem contagem: só fica pronta quando você terminar de responder.")
 
 
-def system_block(chat=False):
+EQUIPE_FILE = ROOT / "docs" / "EQUIPE.md"
+
+
+def _equipe():
+    try:
+        return EQUIPE_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def system_block(chat=False, equipe=False):
     """The part that rarely changes: goes in the system prompt, so Claude's prompt cache keeps hitting."""
     d = load()
     out = []
@@ -82,6 +92,8 @@ def system_block(chat=False):
     if d["personality"]:
         out.append(f"## Tone overlay\n{d['personality']}")
     out.append((CHAT_STYLE if chat else VOICE_STYLE) + PC_RULES)
+    if equipe and not chat:
+        out.append(_equipe())
     return "\n\n".join(out)
 
 
@@ -109,6 +121,7 @@ Responda como uma assistente de voz tipo Alexa: simpática, natural, resposta di
 Pergunta de conhecimento geral: responda do que você sabe. Coisa atual (clima, notícia, preço, placar): pesquise na web.
 A resposta é lida em voz alta: sem markdown, sem listas, sem emoji, sem caminhos longos nem comandos na fala.
 Seja curta e objetiva: no máximo duas frases curtas, com palavras simples e sem jargão técnico. Nada de explicar o que fez por dentro nem listar detalhes; só o resultado. Só se alongue se o usuário pedir mais detalhes.
+Quando o conteúdo precisar ser LIDO e não ouvido (código, tabela, lista longa, passo a passo), responda assim: primeiro uma ou duas frases faladas com o resumo; depois uma linha só com --- ; depois o conteúdo completo em markdown, que aparece na tela e não é falado.
 """
 
 CHAT_STYLE = """## Como responder
@@ -154,10 +167,11 @@ def _help():
 Anything else goes to Claude Code with the relevant vault notes attached."""
 
 
-def handle(message, runner=None):
+def handle(message, runner=None, info=None):
+    """info (optional dict): filled by atalhos.route for the turn log (atalho, filtrado, gemini...)."""
     m = _CMD.match(message or "")
     if not m:
-        reply = atalhos.route(message)
+        reply = atalhos.route(message, info)
         return dict(message=None, reply=reply, note="atalho") if reply else None
     cmd, arg = m.group(1).lower(), m.group(2).strip()
     d = load()

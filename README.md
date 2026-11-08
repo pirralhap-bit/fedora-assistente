@@ -1,60 +1,103 @@
 # Fedora
 
-Assistente pessoal local (toque no buraco negro ou Ctrl+Alt+Espaço): um buraco negro que ouve, com o sistema e o vault orbitando,
-e uma página de notas diárias com ditado. O cérebro é o `claude` CLI (assinatura, sem
-chave de API); a transcrição é o whisper.cpp; a reescrita do ditado e a escolha dos atalhos rápidos são o Gemini (API do Google, `GEMINI_API_KEY` no `.env`). Tudo
-roda em `127.0.0.1`.
+Assistente de voz local para Windows 11. Um buraco negro (na janela e flutuando na tela) que ouve quando você pede, com o sistema e o vault orbitando, e uma página de notas diárias com ditado. O cérebro é o `claude` CLI (assinatura, sem chave de API); a transcrição é o faster-whisper local; atalhos rápidos e a reescrita das notas são o Gemini (`GEMINI_API_KEY` no `.env`). Tudo roda em `127.0.0.1`.
 
 Base: fork de jarvis-claude-code (98b1972), com a interface trocada.
 
 ## Rodar
 
-```bash
-./deploy/instalar.sh   # instala e liga os serviços (whisper, fedora-assistente)
-./tools/testa.sh       # roda o autoteste de cada módulo
+```powershell
+.\iniciar.ps1
 ```
 
-Configuração em `.env` (vault, permissão do Claude, porta, chave e modelos do Gemini, endereço do whisper); dependências do `.venv` em `requirements.txt`.
+Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuante, a janela e a retrospectiva) e `whisper_server.py` (porta 8178). Ctrl+C encerra os dois; se o servidor morrer, o whisper sai sozinho.
+
+- Python do projeto: `.venv\Scripts\python.exe`; dependências em `requirements.txt`.
+- Configuração em `.env` (copie de `.env.example`): chave e modelos do Gemini, vault, permissão do Claude, porta, atalho, etc. O `.env` nunca vai para o git.
+- Precisa do `claude` CLI logado e do Piper (`%LOCALAPPDATA%\fedora-assistente\piper` e `voices`) para falar.
+
+## Como usar
+
+- **Falar**: aperte Ctrl+Alt+Espaço (`FEDORA_HOTKEY`) ou clique no buraco negro. O microfone só abre assim, ou quando ela faz uma pergunta; não há escuta contínua nem palavra de ativação. Fale e pare: o Silero VAD acha o fim da fala. "Ok, Fedora" no começo do pedido é apenas removido; não ativa nada.
+- **Esc** cancela o turno em andamento (voz ou chat): o servidor mata o Claude e descarta a sessão daquele canal.
+- **`#notas`** (na URL da janela): página de notas diárias. Voz lá: "ditar", "organizar", "salvar", "voltar", "desfazer". O resto vai para o Claude.
+- **`#chat`**: conversa digitada, estilo Claude Code (Enter envia, Shift+Enter quebra linha).
+- **Modo leve (padrão)**: poucas ferramentas, contexto pequeno. "A fundo", "modo analista" ou "modo completo" no pedido liga o Claude Code completo (skills, PowerShell etc.). `FEDORA_MODO_LEVE=0` deixa sempre completo.
+- **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha a ferramenta Agent e o mapa de `docs/EQUIPE.md` (subagentes em `.claude/agents/`: junior, senior, qa). Custa cerca de 2,8 mil tokens a mais por turno.
+- **Resposta longa**: o que vem depois de uma linha `---` fica só na tela; só a parte antes dela é falada.
+- **Linha do tempo de agentes**: quando há delegação, a interface mostra quem recebeu o pedido, quais subagentes foram acionados e o que cada um usou.
+- Atalhos rápidos sem Claude (hora, data, abrir app/jogo/site/pasta, volume, mídia, print, timer, clima, sistema): ver `atalhos.md`.
 
 ## Peças
 
 | Arquivo | O que faz |
 |---|---|
-| `server.py` | servidor HTTP local; só aceita `localhost` e exige token nos POST |
-| `runtime.py` | chama `claude -p` (acesso total; a lista `DENY` veta desligar o PC e apagar por `rm`/`dd`/`shred`) |
-| `sysinfo.py` | CPU, RAM (`/proc`), GPU/VRAM da AMD (sysfs), status da última chamada ao Gemini |
+| `server.py` | servidor HTTP local (`/api/*` e a UI); só aceita `localhost`, exige token nos POST; decide a rota do turno, grava o registro e sobe o resto |
+| `runtime.py` | chama `claude -p` em stream; `DENY` e regras de segredo; modos leve/equipe/completo |
+| `commands.py` | `/comandos`, regras do PC (`PC_RULES`), bloco de sistema do prompt, lê `docs/EQUIPE.md` no modo equipe |
+| `conversa.py` | sessão do Claude (janela de 900 s, máx. 10 turnos) e escolha do modo (leve/equipe/completo) |
+| `memory.py` | lê o vault Obsidian como grafo de notas; ignora notas com `fedora-log: true` |
+| `atalhos.py` + `atalhos.md` | pedidos rápidos sem Claude: filtro local, depois o Gemini escolhe o atalho e o código executa |
+| `llm.py` | API do Gemini (JSON) com disjuntor: depois de uma falha, o atalho rápido fica 5 min fora e tudo vai direto ao Claude |
+| `listener.py` | ouvido push-to-talk: atalho global, microfone, VAD, whisper, entrega o pedido ao servidor |
+| `vad.py` | Silero VAD (onnxruntime): decide o que é fala |
+| `speech.py` | voz: Piper (pt_BR faber) tocando por sounddevice; também fala o aviso do timer |
+| `whisper_server.py` | STT local, porta 8178: faster-whisper `small`, CPU/int8 (mesmo contrato do whisper.cpp) |
+| `orb.py` | buraco negro flutuante sem borda; clique fala/encerra, arrastar move, botão direito abre o menu (`FEDORA_ORB=0` desliga) |
 | `notes.py` | lista, lê e salva daily notes; recusa salvar se a nota mudou fora (Obsidian) |
-| `tidy.py` | reorganiza a nota diária inteira pelas seções (Gemini), sem perder linha |
-| `llm.py` | chamada à API do Gemini (JSON), usada por `tidy.py` e `atalhos.py` |
-| `atalhos.py` + `atalhos.md` | pedidos rápidos sem Claude: o Gemini (flash-lite) escolhe o atalho, o código executa |
-| `vad.py` | Silero VAD: decide o que é fala |
-| `listener.py` | ouvido sempre ligado: microfone (PipeWire) → Silero → whisper; só reage a “Ok, Fedora” |
-| `speech.py` | voz: Piper (pt_BR faber) tocando direto na caixa de som com pw-play |
-| `ui/index.html` | a interface inteira (buraco negro + `#notas`) |
+| `tidy.py` | reorganiza a nota diária pelas seções (Gemini); não aplica se perder conteúdo |
+| `sysinfo.py` | CPU, RAM, GPU e status da última chamada ao Gemini |
+| `turnolog.py` | registro por turno (`turnos.jsonl`) |
+| `retro.py` | nota semanal de retrospectiva no vault |
+| `ui/index.html` | a interface inteira (buraco negro, `#notas`, `#chat`) |
+| `iniciar.ps1` | sobe servidor + STT |
+| `tools/` | `testa.ps1` (autotestes offline), `compara-voz.py` (compara modelos de voz em clipes salvos) |
 
-## Serviços (systemd de usuário)
+STT medido em CPU: `medium` e `large-v3-turbo` são 3 a 4 vezes mais lentos (6 a 9 s) e não acertam mais os nomes; ficou o `small`.
 
-| Serviço | O quê |
-|---|---|
-| `whisper.service` | whisper.cpp `medium` na placa (Vulkan) em 127.0.0.1:8178 |
-| `fedora-assistente.service` | este servidor (porta 8720) + o ouvido |
+## Segurança
 
-Os arquivos dos serviços e atalhos ficam em `deploy/` (cópia do que está instalado em `~/.config`).
-Abrir a janela: menu de apps → **Fedora** (Chrome em modo app); abre sozinha no login.
-Modo gamer: `tools/modo-gamer.sh liga` para os três serviços e fecha a janela; `tools/modo-gamer.sh desliga` traz tudo de volta.
+- A Fedora roda o Claude com `bypassPermissions` (`JARVIS_PERMISSION`): ele age sem pedir confirmação, guiado pelo que ouviu. Um `claude -p` sem tela não consegue mostrar prompt de permissão; qualquer modo mais estrito bloqueia as ferramentas em silêncio (`acceptEdits` limita a edições).
+- A lista `DENY` em `runtime.py` é um **freio contra frase mal ouvida, não um sandbox**. Ela veta desligar/reiniciar/suspender o PC, apagar de vez (`rm`, `del`, `Remove-Item`, `rmdir`, `format`, `diskpart`, `reg delete`, `os.remove`, `shutil.rmtree`, `git clean`, `robocopy /mir`...), `-EncodedCommand` e matar processos críticos, nas ferramentas Bash e PowerShell. Mover para a Lixeira continua permitido (`PC_RULES` em `commands.py`).
+- O que o `DENY` **não** cobre (aceito): maiúsculas e minúsculas misturadas no Bash, ofuscação (concatenação de strings, base64 fora de `-EncodedCommand`, escapes `^` do cmd), `DeleteFile` com um só argumento (apaga de vez por padrão) e `taskkill`/`Stop-Process` por PID em processos críticos. Palavra perigosa dentro de URL ou texto de busca num comando Bash também é negada (falso positivo de propósito).
+- Leitura de `.env` e `*.token` é negada (regras `Read(...)` e globs de comando), inclusive o token do servidor em `%LOCALAPPDATA%\fedora-assistente`.
+- O servidor só aceita `localhost` e exige o token em todo POST.
+- `tidy.py` confere a saída do Gemini linha a linha e não aplica a reorganização se perder conteúdo; `notes.py` não salva por cima de nota alterada fora.
 
-## Usar
+## Registro por turno e retrospectiva
 
-- “Ok, Fedora, <pedido>” de uma vez, ou “Ok, Fedora” e o pedido depois.
-  Sem a frase, o áudio é descartado e nunca vai pro disco.
-- Tocar no buraco negro / Espaço = falar sem dizer o nome. “mic ligado” desliga o microfone de verdade.
-- “notas diárias” abre o editor; lá: “ditar”, “organizar”, “salvar”, “voltar”. O resto vai pro Claude.
-- Se a janela estiver fechada, “Ok, Fedora” abre ela e entrega o pedido.
+**Registro (`turnolog.py`).** Cada turno (voz ou chat) vira uma linha JSON em `turnos.jsonl`, fora do repo e do vault: `%USERPROFILE%\.local\state\fedora\turnos.jsonl` (a pasta do `conversa.md`; `XDG_STATE_HOME` muda a base). `FEDORA_TURNLOG` aponta outro arquivo. Passou de 5 MB, vira `turnos.1.jsonl` (só um antigo é mantido).
+- Grava: hora, canal, pedido, rota (`comando`, `atalho`, `filtro_local→claude`, `claude`, `erro`), atalho, modo, sessão nova, agentes, nº de ferramentas, tempos, tokens, erro curto, cancelado, estado do Gemini, `sinais`.
+- Pedido comum guarda só os primeiros 60 caracteres; turno com sinal guarda até 400. Antes de gravar, números com 6 ou mais dígitos (CPF, cartão, telefone) e o valor depois de "senha", "token", "cpf", "cnpj", "cartão", "pix", "chave" viram `[oculto]`.
+- Sinais: `repeticao` (mesmo pedido em 30 s), `atalho_barrado_e_repetido`, `escalar`, `cancelado`, `erro`, `resposta_vazia`.
+- Nunca derruba um turno: falha ao gravar só imprime um aviso.
 
-## Windows (reconstrução 2026-11-06)
+**Retrospectiva (`retro.py`).** Uma nota por semana ISO: `Fedora - Retrospectiva AAAA-Wss.md` em `00-INB*/_a-processar` do vault (se essa pasta não existe, nada é criado).
+- Só dias completos (antes de hoje), no máximo 14 dias para trás. Cada dia ganha um bloco: números calculados em código e, com 5 turnos ou mais no dia, uma leitura curta do Haiku (até 3 tentativas por dia; limite de cota não conta tentativa). No máximo 2 dias por execução; custa cerca de 5 mil tokens por dia analisado. Roda 60 s depois de subir o servidor e a cada 6 h.
+- A nota só recebe blocos no fim; nada já escrito é reescrito. Pode editar à vontade, mas **não apague os marcadores** `<!-- fedora-retro... -->`: é por eles que ela sabe que o dia já foi feito.
+- O estado fica em `retro.json`, na mesma pasta do `turnos.jsonl`. Notas com `fedora-log: true` no frontmatter ficam fora da memória da Fedora.
+- `FEDORA_RETRO=0` desliga. `python retro.py --agora` roda já (log, vault e Haiku reais); `python retro.py --teste` é offline.
+- Fluxo: a retrospectiva cai no inbox; você pede "processa a nota de retrospectiva"; ela devolve um plano de ação; você aprova; a equipe (modo equipe) executa.
 
-- **Push-to-talk**: o microfone só abre quando você aperta o atalho global (`FEDORA_HOTKEY`, padrão `ctrl+alt+space`),
-  clica no buraco negro ou quando ela faz uma pergunta. Sem escuta contínua, sem palavra de ativação, sem alucinação com música/vídeo.
-- Ouvido: `listener.py` (grava até o Silero VAD achar o fim da fala) → `whisper_server.py` (faster-whisper `small`, CPU) → `server.py`.
-- Subir: `.\iniciar.ps1`. Testar: `python listener.py`, `python vad.py`, `python speech.py`.
-- `medium` e `large-v3-turbo` testados em CPU: 3 a 4 vezes mais lentos (6–9 s), sem acertar mais os nomes; ficou o `small`.
+## Filtro local
+
+Antes de qualquer chamada ao Gemini, `atalhos.pode_ir_ao_gemini(pedido)` decide, sem rede, se o pedido pode sair do PC. Só pedidos que parecem atalho vão ao Gemini; o resto vai direto ao Claude (rota `filtro_local→claude`). Conversa, dados pessoais e frases longas nunca saem.
+- Duas portas, as duas necessárias, sobre o pedido normalizado (sem acento/pontuação, sem "aí", "por favor", "me" no começo): a frase começa com verbo/expressão de algum atalho ("abre", "sobe", "me avisa", "daqui a", "que horas") e tem objeto compatível (volume/som, brilho, música, print, uma duração, clima...).
+- `MAX_PALAVRAS = 12`: acima disso nunca passa. Cada regra em `REGRAS` tem também o seu máximo de palavras.
+- "Abrir" com nome que o catálogo não conhece só passa em frase curta e sem palavra de conversa; pesquisa só com "no google/na internet" ou curta e sem nada pessoal.
+- Para ampliar: acrescente uma entrada em `REGRAS` (atalho, começo, objeto ou `None`, máximo de palavras), ou novos exemplos no `atalhos.md` (o teste usa os exemplos de lá). Erre para o lado seguro: barrar um atalho custa um turno do Claude; deixar passar conversa manda a frase à rede.
+- `python atalhos.py --teste-filtro` (offline) mede os dois lados: legítimas que passam >= 90 % e conversa que vaza <= 2/10 (hoje 100 % e 0/40).
+
+## Testes
+
+```powershell
+.\tools\testa.ps1
+```
+
+Se a política de execução bloquear: `powershell -ExecutionPolicy Bypass -File tools\testa.ps1`.
+
+Roda os autotestes offline de cada módulo e sai com código diferente de zero se algum falhar. Não chama o Gemini nem o Claude. `python atalhos.py` (completo) e `python tidy.py --gemini` usam o Gemini de verdade e ficam fora; rode à mão quando quiser.
+
+## Legado Linux
+
+A versão antiga (Fedora Linux: systemd, `.desktop`, `pw-play`, whisper.cpp na GPU) está em `legado-linux/`, sem manutenção. Veja `legado-linux/LEIAME.md`.

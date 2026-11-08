@@ -134,21 +134,42 @@ def ear(action):
         pass
 
 
+k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+k32.CreateMutexW.restype = wintypes.HANDLE
+k32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+k32.CloseHandle.argtypes = [wintypes.HANDLE]
+MUTEX = f"Local\\fedora-orb-{PORT}"   # one orb per server port: the server starts one on every restart
+
+
+def unico(nome=MUTEX):
+    """Named mutex held for the life of the process; None if another orb already holds it (then this one exits)."""
+    h = k32.CreateMutexW(None, False, nome)
+    if not h:
+        return None
+    if ctypes.get_last_error() == 183:   # ERROR_ALREADY_EXISTS
+        k32.CloseHandle(h)
+        return None
+    return h
+
+
 def abrir_janela():
     edge = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     subprocess.Popen([edge, f"--app={BASE}/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def main():
+    trava = unico()
+    if trava is None:   # an orb is already on screen
+        return
     import tkinter as tk
 
-    st = dict(level=0.0, shown=0.0, state="idle", alive=time.time())
+    st = dict(level=0.0, shown=0.0, state="idle", alive=time.time(), trava=trava)
 
     def sse():
         falhas = 0
         while True:
-            try:
-                with urllib.request.urlopen(BASE + "/api/events", timeout=40) as r:
+            try:   # passivo: the orb doesn't count as an open page, so a spoken command still opens the window
+                with urllib.request.urlopen(BASE + "/api/events?passivo=1", timeout=40) as r:
                     falhas = 0
                     for raw in r:
                         st["alive"] = time.time()
@@ -230,6 +251,20 @@ if __name__ == "__main__":
         for est in ESTADOS:
             f = frame(1.0, 0.5, est)
             assert f.shape == (SIZE, SIZE, 4) and f[..., 3].max() > 200 and f[0, 0, 3] == 0, est
+        # single instance: while this process holds the mutex a second orb (another process) gets None and exits
+        nome = f"Local\\fedora-orb-teste-{os.getpid()}"
+        h = unico(nome)
+        assert h and unico(nome) is None
+        segundo = subprocess.run([sys.executable, "-c", f"import orb, sys; sys.exit(0 if orb.unico({nome!r}) is None else 1)"],
+                                 cwd=os.path.dirname(os.path.abspath(__file__)), timeout=60)
+        assert segundo.returncode == 0, "o segundo orb pegou o mutex"
+        os.environ["JARVIS_PORT"] = "1"   # main() of a second orb returns at once (no window, no server needed)
+        dup = subprocess.run([sys.executable, "-c", "import orb, ctypes; h = orb.unico(); "
+                              "import subprocess, sys; r = subprocess.run([sys.executable, 'orb.py'], timeout=20); sys.exit(r.returncode)"],
+                             cwd=os.path.dirname(os.path.abspath(__file__)), timeout=60)
+        assert dup.returncode == 0, "o orb duplicado não saiu sozinho"
+        k32.CloseHandle(h)
+        assert unico(nome), "solto o mutex, um orb novo pode subir"
         print("orb ok")
     else:
         main()

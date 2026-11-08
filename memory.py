@@ -41,6 +41,7 @@ CACHE_TTL = 2.0
 
 
 def _parse_frontmatter(text):
+    text = text.lstrip("﻿").replace("\r\n", "\n")   # a BOM before '---' hid the frontmatter (QA, lote E)
     meta, body = {}, text
     m = FRONTMATTER.match(text)
     if m:
@@ -52,14 +53,35 @@ def _parse_frontmatter(text):
     return meta, body
 
 
+def _log_da_fedora(meta):
+    """`fedora-log: true` (the weekly retrospective, retro.py): the Fedora's own log, never fed back into her prompts
+    (graph, /recall, context_for) just because a word matches."""
+    v = str(meta.get("fedora-log", "")).split("#", 1)[0]          # "fedora-log: true # comentário"
+    return v.strip().strip('"').strip("'").strip().lower() in ("true", "yes", "sim", "1")
+
+
 def _signature():
     """Cheap change detector so the graph reloads when you edit the vault."""
+    sig = []
+    for p in _md_files():
+        try:
+            sig.append((str(p), int(p.stat().st_mtime)))
+        except OSError:   # deleted/renamed by Obsidian mid-scan, or a broken link: skip that file
+            pass
+    return tuple(sorted(sig))
+
+
+def _md_files():
+    """The vault's .md files; a folder that vanishes mid-walk ends the walk instead of raising."""
+    out = []
     if not VAULT.exists():
-        return ()
-    return tuple(sorted(
-        (str(p), int(p.stat().st_mtime))
-        for p in VAULT.rglob("*.md")
-    ))
+        return out
+    try:
+        for p in VAULT.rglob("*.md"):
+            out.append(p)
+    except OSError:
+        pass
+    return out
 
 
 def build_graph(force=False):
@@ -74,12 +96,14 @@ def build_graph(force=False):
 
         nodes, by_title, edges = {}, {}, []
         if VAULT.exists():
-            for path in sorted(VAULT.rglob("*.md")):
+            for path in sorted(_md_files()):
                 try:
                     text = path.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     continue
                 meta, body = _parse_frontmatter(text)
+                if _log_da_fedora(meta):
+                    continue
                 title = meta.get("title") or path.stem
                 ntype = (meta.get("type") or "note").strip().lower()
                 key = title.lower()
@@ -174,3 +198,25 @@ def context_for(message, limit=4):
     for _, node in scored[:limit]:
         out.append(f"### {node['title']} ({node['type']})\n{node['snippet']}")
     return "\n\n".join(out)
+
+
+if __name__ == "__main__":
+    import tempfile
+    VAULT = pathlib.Path(tempfile.mkdtemp(prefix="memory-teste-"))
+    (VAULT / "inbox").mkdir()
+    (VAULT / "Gabinete impressora.md").write_text("---\ntype: project\n---\nArestas impressas, faces em chapa. [[Retro]]\n",
+                                                  encoding="utf-8")
+    (VAULT / "inbox" / "Fedora - Retrospectiva 2026-W45.md").write_bytes(
+        "---\r\ntags:\r\n  - Assistente\r\ncriado: 2026-11-05\r\nstatus: bruto\r\nfedora-log: true\r\n---\r\n\r\n"
+        "## 2026-11-04\r\n- Atalhos mais usados: abrir 3 · gabinete impressora\r\n".encode("utf-8"))
+    (VAULT / "inbox" / "Outra.md").write_text("---\nfedora-log: false\n---\nnota comum sobre gabinete\n", encoding="utf-8")
+    for nome, dados in (("bom", "﻿---\nfedora-log: true\n---\natalhos mais usados\n"),                   # BOM
+                        ("bomcrlf", "﻿---\r\nfedora-log: true\r\n---\r\natalhos mais usados\r\n"),  # BOM + CRLF
+                        ("coment", "---\nfedora-log: true # gerada pela Fedora\n---\natalhos mais usados\n"),
+                        ("aspas", "---\nfedora-log: \"true\"\n---\natalhos mais usados\n")):
+        (VAULT / "inbox" / f"Retro {nome}.md").write_bytes(dados.encode("utf-8"))
+    g = build_graph(force=True)
+    assert sorted(n["title"] for n in g["nodes"]) == ["Gabinete impressora", "Outra"], g["nodes"]
+    assert not search("atalhos mais usados") and [n["title"] for n in search("gabinete")] == ["Gabinete impressora", "Outra"]
+    assert "Retrospectiva" not in context_for("quais atalhos mais usados no gabinete impressora") and top_match("atalhos usados") is None
+    print("memory ok")

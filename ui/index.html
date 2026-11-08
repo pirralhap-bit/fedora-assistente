@@ -48,6 +48,12 @@ body[data-v="listen"] .state i,body[data-v="dict"] .state i{background:var(--hot
 body[data-v="think"] .state i{background:var(--cool)}
 .heard{font:300 26px/1.3 var(--ui);min-height:1.3em;color:var(--ink);text-wrap:balance}
 .reply{font-size:14px;color:var(--dim);min-height:1.5em;max-width:56ch;text-wrap:pretty}
+.reply.long{max-height:38vh;overflow:auto;text-align:left;color:var(--ink)}
+.reply.long pre{overflow-x:auto;padding:8px 0 8px 12px;border-left:2px solid var(--faint)}
+.reply.long table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto}
+.reply.long th,.reply.long td{padding:3px 12px 3px 0;text-align:left}
+#tlhome .tl{max-width:56ch;margin:0 auto 6px}
+#tlhome:empty{display:none}
 .cmds{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;font-size:13px}
 .cmd{background:none;border:0;padding:4px 0;color:var(--dim);border-bottom:1px solid transparent}
 .cmd:hover{color:var(--ink);border-bottom-color:var(--faint)}
@@ -107,6 +113,13 @@ body[data-v="think"] .state i{background:var(--cool)}
 .ai table{border-collapse:collapse;font-size:14px;display:block;overflow-x:auto}
 .ai th,.ai td{padding:4px 14px 4px 0;text-align:left;border-bottom:1px solid #1d1b16}.ai th{color:var(--dim);font-weight:500}
 .ai a{color:var(--hot)}
+.tl{margin:6px 0 10px;padding:2px 0 2px 12px;border-left:1px solid var(--faint);font:300 12px var(--data);color:var(--faint)}
+.tlr{display:flex;align-items:baseline;gap:8px;margin:3px 0;white-space:nowrap;overflow:hidden}
+.tlr i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--faint);align-self:center}
+.tlr span{overflow:hidden;text-overflow:ellipsis}.tlr em{margin-left:auto;font-style:normal;padding-left:10px}
+.tlr.ag span{color:var(--ink)}.tlr.sub{margin-left:16px}
+.tlr.ok i{background:var(--dim)}.tlr.run i{background:var(--hot);animation:tlp 1s ease-in-out infinite}.tlr.bad i{background:var(--warn)}
+@keyframes tlp{50%{opacity:.25}}
 .tool{font:300 12px var(--data);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:2px 0}
 .tool b{font-weight:400;color:var(--dim)}
 .tool.bad b{color:var(--warn)}
@@ -142,6 +155,7 @@ body[data-v="think"] .state i{background:var(--cool)}
   <div class="voice">
     <div class="state" id="state"><i aria-hidden="true"></i><span id="state-t">Toque ou aperte Espaço para falar</span></div>
     <div class="heard" id="heard" aria-live="polite"></div>
+    <div id="tlhome"></div>
     <div class="reply" id="reply" aria-live="polite"></div>
     <div class="cmds" id="cmds"></div>
     <form class="typed" id="typed">
@@ -300,7 +314,7 @@ async function refreshSystem(){try{S=await api('/api/system')}catch{}fillOrbit()
 async function refreshVault(){try{V=await api('/api/vault')}catch{}fillOrbit()}
 refreshSystem();refreshVault();setInterval(refreshSystem,2000);setInterval(refreshVault,60000);
 const ear=action=>api('/api/ear',{action}).catch(e=>say(errMsg(e)));
-// tells the ear whether this window is in front; when it is not, "Ok, Fedora" shows the mini orb by the mouse
+// tells the ear whether this window is in front (push-to-talk; the server currently only acknowledges focus/blur)
 const focusEar=()=>api('/api/ear',{action:document.hasFocus()?'focus':'blur'}).catch(()=>{});
 addEventListener('focus',focusEar);addEventListener('blur',focusEar);
 function showStatus(){api('/api/status').then(s=>{
@@ -318,18 +332,27 @@ function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[
   hole.goal=mini.goal=chole.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=chole.spin=s==='think'?2.2:1;
   $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
   const d=s==='dict';$('dictate').setAttribute('aria-pressed',d);$('dictate').textContent=d?'Parar':'Ditar'}
-const say=t=>{$('reply').textContent=t};
+const say=t=>{const r=$('reply');r.classList.remove('long');r.textContent=t};
+// resposta com parte falada + parte só para ler: o que vem depois de uma linha --- fica na tela e não é falado
+const SPLIT=/\n\s*-{3,}\s*\n/;
+const falada=t=>t.split(SPLIT)[0].trim();
+function showLong(t){const r=$('reply');r.classList.add('long');r.innerHTML=md(t.replace(SPLIT,'\n\n'));r.scrollTop=0}
 function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
   es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data)}catch{return}
     if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=chole.goal=Math.min(1,.3+ev.v*2.5)}
     else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}
     else if(ev.t==='wake'){$('heard').textContent='';say('');setV('listen')}
-    else if(ev.t==='command'){if(!ev.text){say('Não entendi. Toque no buraco negro e fale de novo.');return}$('heard').textContent=ev.text;run(ev.text)}
+    else if(ev.t==='command'){if(busy)return aviso('Espere a resposta (ou Esc).');if(!ev.text){say('Não entendi. Toque no buraco negro e fale de novo.');return}$('heard').textContent=ev.text;run(ev.text)}
+    else if(ev.t==='aviso')aviso(ev.message)
     else if(ev.t==='dictation')insertDictation(ev.text)
     else if(ev.t==='error'){say(ev.message);hint(ev.message)}};
   es.onerror=()=>{$('status').textContent='servidor desconectado · tentando de novo…';es.close();setTimeout(()=>{connect();showStatus()},3000)}}
 connect();
-function run(text){if(busy)return;busy=true;command(text).finally(()=>{busy=false})}
+// short notice that doesn't touch the answer on screen (a turn is still running): status line, chat or notes hint
+function aviso(t){if(!$('chat').hidden)return cstate(t);if(!$('notes').hidden)return hint(t);
+  $('status').textContent=t;clearTimeout(aviso.t);aviso.t=setTimeout(showStatus,4000)}
+let parado=false;   // Esc on this turn: keep the partial answer on screen, don't speak it
+function run(text){if(busy)return aviso('Espere a resposta (ou Esc).');busy=true;parado=false;command(text).finally(()=>{busy=false})}
 async function command(raw){
   const text=raw.replace(/^\s*(ok,?\s*)?fedora[\s,.!:]*/i,'').trim(),t=norm(text);
   if(!text)return say('Pode falar.');
@@ -346,13 +369,20 @@ async function command(raw){
   if(/^(desfaz)/.test(t)&&!$('undo').disabled)return $('undo').click();
   await askClaude(text)}
 async function askClaude(text){
-  setV('think');let out='';if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
+  setV('think');let out='',tl=null;const th=$('tlhome');th.replaceChildren();if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
   try{await streamRun({message:text},ev=>{
-        if(ev.t==='delta'){out+=ev.text;say(out)}
+        if(ev.t==='delta'){out+=ev.text;say(falada(out))}
         else if(ev.t==='error'){say(ev.message)}
-        else if(ev.t==='tool'&&ev.phase==='use'){$('state-t').textContent='Usando '+ev.name}});
-    if(!$('notes').hidden)hint(out);speak(out)}
-  catch(e){say(errMsg(e))}finally{setV('idle')}}
+        else if(ev.t==='tool'&&ev.phase==='use'){
+          if(ev.agent&&!tl){tl=timeline();th.append(tl.box)}   // a linha do tempo só aparece quando há delegação
+          if(tl)tl.start(ev);
+          $('state-t').textContent=ev.agent?'Delegando para '+ev.agent:'Usando '+ev.name}
+        else if(ev.t==='tool'&&ev.phase==='result'){if(tl)tl.end(ev)}});
+    if(tl)tl.finish(true);
+    if(parado)return say((out?falada(out)+' ':'')+'(Interrompido.)');
+    if(SPLIT.test(out))showLong(out);
+    if(!$('notes').hidden)hint(falada(out));speak(falada(out))}
+  catch(e){if(tl)tl.finish(false);say(errMsg(e))}finally{setV('idle')}}
 // /api/run answers in NDJSON lines (delta, tool, usage, complete, error); shared by voice and chat
 async function streamRun(body,on){
   const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify(body)});
@@ -365,7 +395,7 @@ const tap=()=>{if(vs==='listen'||vs==='dict')ear('stop');else if(vs==='idle')ear
 $('hole').addEventListener('click',tap);
 $('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
 addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();tap()}});
-$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v||busy)return;$('cmd').value='';$('heard').textContent=v;run(v)});
+$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v)return;if(busy)return aviso('Espere a resposta (ou Esc).');$('cmd').value='';$('heard').textContent=v;run(v)});
 $('mute').onclick=()=>ear(vs==='mute'?'on':'off');
 ['notas diárias','abrir o chat','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
   b.onclick=()=>{$('heard').textContent=c;run(c)};$('cmds').append(b)});
@@ -428,18 +458,29 @@ const plain=s=>s.replace(/```[\s\S]*?(```|$)/g,' O código está na tela. ').rep
 const clog=$('clog'),cin=$('cin'),cstate=t=>{$('cstate').textContent=t};
 const saveLog=()=>{try{sessionStorage.setItem('fedora-chat',clog.innerHTML)}catch{}};
 try{clog.innerHTML=sessionStorage.getItem('fedora-chat')||''}catch{}
+// linha do tempo de um turno: quem recebeu, quem foi acionado (subagentes) e o que cada um usou
+function timeline(){const box=el('div','tl'),t0=performance.now(),rows={};
+  const fmt=ms=>(ms/1000).toFixed(1).replace('.',',')+' s';
+  const add=(txt,cls,id)=>{const r=el('div','tlr '+cls);r.append(el('i'),el('span',null,txt),el('em',null,cls.includes('run')?'':fmt(performance.now()-t0)));r._t=performance.now();box.append(r);if(id)rows[id]=r;return r};
+  const close=(r,ok)=>{r.classList.replace('run',ok?'ok':'bad');r.lastChild.textContent=fmt(performance.now()-r._t)};
+  add('Fedora (tech lead) recebeu o pedido','ok');
+  return{box,
+    start(ev){const ag=ev.agent,sub=ev.parent&&rows[ev.parent];
+      add(ag?`→ ${ag}: ${ev.desc||'tarefa delegada'}`:`${ev.name} ${ev.input||''}`,(ag?'ag ':'')+'run'+(sub?' sub':''),ev.id);return ag},
+    end(ev){const r=rows[ev.id];if(r)close(r,ev.ok)},
+    finish(ok){box.querySelectorAll('.run').forEach(r=>close(r,ok));add(ok?'Resposta pronta':'Interrompido','ok')}}}
 async function chatSend(text){
   text=(text||'').trim();if(!text)return;if(busy)return cstate('Espere a resposta atual (ou Esc para interromper).');
   busy=true;setV('think');clog.append(el('div','me',text));
-  const ai=el('div','ai');let out='';const scroll=()=>clog.scrollTop=clog.scrollHeight;clog.append(ai);scroll();cstate('Pensando…');
+  const ai=el('div','ai');let out='',tl=null,failed=false;const scroll=()=>clog.scrollTop=clog.scrollHeight;clog.append(ai);scroll();cstate('Pensando…');
   try{await streamRun({message:text,canal:'chat'},ev=>{
       if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);scroll()}
-      else if(ev.t==='tool'&&ev.phase==='use'){const d=el('div','tool');d.append(el('b',null,'› '+ev.name),' '+(ev.input||''));ai.before(d);cstate('Usando '+ev.name+'…');scroll()}
-      else if(ev.t==='tool'&&ev.phase==='result'&&!ev.ok){const d=ai.previousElementSibling;if(d&&d.classList.contains('tool'))d.classList.add('bad')}
-      else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out)}});
-    ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
+      else if(ev.t==='tool'&&ev.phase==='use'){if(!tl){tl=timeline();ai.before(tl.box)}const ag=tl.start(ev);cstate(ag?'Delegando para '+ev.agent+'…':'Usando '+ev.name+'…');scroll()}
+      else if(ev.t==='tool'&&ev.phase==='result'){if(tl)tl.end(ev)}
+      else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out);failed=true}});
+    if(tl)tl.finish(!failed);ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
     await refreshSystem();const l=S.claude&&S.claude.last;cstate(l?`${num.format(l.total)} tokens nesta resposta`:'')}
-  catch(e){ai.textContent=errMsg(e);cstate('')}
+  catch(e){if(tl)tl.finish(false);ai.textContent=errMsg(e);cstate('')}
   finally{busy=false;setV('idle');saveLog();scroll()}}
 clog.addEventListener('click',e=>{if(e.target.classList.contains('ouvir')){const ai=e.target.previousElementSibling;speak(plain(ai.dataset.raw||ai.textContent))}});
 const sendTyped=()=>{const v=cin.value;if(!v.trim()||busy)return;cin.value='';cin.style.height='';chatSend(v)};
@@ -447,7 +488,9 @@ $('cform').addEventListener('submit',e=>{e.preventDefault();sendTyped()});
 $('csend').onclick=sendTyped;
 cin.addEventListener('input',()=>{cin.style.height='auto';cin.style.height=cin.scrollHeight+'px'});
 cin.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();sendTyped()}});
-addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('chat').hidden&&busy){api('/api/cancel',{}).catch(()=>{});cstate('Interrompido.')}});
+// Esc stops the running turn, typed chat or voice (home screen): the server kills Claude and drops that channel's session
+addEventListener('keydown',e=>{if(e.key!=='Escape'||!busy)return;parado=true;api('/api/cancel',{}).catch(()=>{});
+  if(!$('chat').hidden)cstate('Interrompido.');else say('Interrompido.')});
 $('cnew').onclick=async()=>{if(busy)return;try{await api('/api/chat/new',{})}catch(e){return cstate(errMsg(e))}clog.replaceChildren();saveLog();cstate('Conversa nova.');cin.focus()};
 $('chole').addEventListener('click',tap);$('chole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
 
