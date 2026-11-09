@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 import threading
 import time
 import uuid
@@ -74,9 +75,14 @@ def _tokens_block():
 EQUIPE_FILE = ROOT / "docs" / "EQUIPE.md"
 
 
+def comando_agentes():
+    """The shell command any engine uses to call a team agent: absolute paths with /, so it works in bash and PowerShell."""
+    return f'"{pathlib.Path(sys.executable).as_posix()}" "{(ROOT / "agentes.py").as_posix()}"'
+
+
 def _equipe():
     try:
-        return EQUIPE_FILE.read_text(encoding="utf-8")
+        return EQUIPE_FILE.read_text(encoding="utf-8").replace("{AGENTES}", comando_agentes())
     except OSError:
         return ""
 

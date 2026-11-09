@@ -98,12 +98,24 @@ DENY = list(dict.fromkeys(
 # without it the MCP tools (Gmail, Drive, Chrome) load in full instead of deferred (17k measured).
 LIGHT = ["--disable-slash-commands",
          "--tools", "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,ToolSearch"]
-LIGHT_EQUIPE = [LIGHT[0], LIGHT[1], LIGHT[2] + ",Agent"]   # + subagents (junior/senior/qa), only when asked for
+# Team mode needs no extra tool: the agents (agentes/, independent of the engine) are called through the shell with
+# `agentes.py <agente> "<tarefa>"`, so the same call works from the Claude engine and from the agy engine.
+LIGHT_EQUIPE = LIGHT
 LIMITS = {}   # last seen plan usage: {"five_hour": {"used": .29, "resets": epoch}, ...}
 RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
-# Qual assinatura responde: claude (padrao) ou agy (Antigravity/Google, motor_agy.py, mesma autonomia, mesmas travas DENY).
-MOTOR = os.environ.get("FEDORA_MOTOR", "claude").strip().lower()
+# Qual assinatura responde: auto (padrao: Claude, e o agy quando o Claude passa de 55% na semana ou chega a 90% na sessao
+# de 5 h, ate aquela janela resetar; ver motor_regra.py), ou claude / agy para forcar um.
+# agy = Antigravity/Google (motor_agy.py, mesma autonomia, mesmas travas DENY).
+MOTOR = os.environ.get("FEDORA_MOTOR", "auto").strip().lower()
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
+# A tool still running (tool_use without its tool_result, e.g. the shell waiting for agentes.py) sends nothing on the
+# stream: while one is pending the idle limit grows to this hard ceiling instead (never waits forever).
+AGENTE_TIMEOUT = int(os.environ.get("FEDORA_AGENTE_TIMEOUT", "300"))
+
+
+def limite_ocioso(ferramenta_pendente):
+    """Seconds of silence allowed: IDLE_TIMEOUT, or the hard ceiling while a tool is still running."""
+    return max(IDLE_TIMEOUT, AGENTE_TIMEOUT + 60) if ferramenta_pendente else IDLE_TIMEOUT
 RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "").strip()
 
 # One Claude subprocess at a time: session state is shared, and the browser
@@ -269,12 +281,42 @@ def escalar_em(content):
     return bool(ESCALAR_RE.search(str(content or "")))
 
 
+SHELL_TOOLS = ("Bash", "PowerShell", "run_command")   # Claude Code's shell tools and the agy one
+# `<python> <path>/agentes.py <agente> "<tarefa>"`: how any engine calls a team agent. The command must START with a
+# Python (python, py, or a path ending in python.exe, quoted or not) followed by agentes.py, and the name must be followed
+# by a space or the end ("git diff agentes.py runtime.py" and "...agentes.py qa.md" are not delegations).
+_PY_RE = r"""(?i:"(?:[^"]*[\\/])?python3?(?:\.exe)?"|'(?:[^']*[\\/])?python3?(?:\.exe)?'|(?:[^\s"']*[\\/])?python3?(?:\.exe)?|py(?:\.exe)?)"""
+_AGENTES_PY_RE = r"""(?:"(?:[^"]*[\\/])?agentes\.py"|'(?:[^']*[\\/])?agentes\.py'|(?:[^\s"']*[\\/])?agentes\.py)"""
+AGENTE_CMD_RE = re.compile(rf"""\s*{_PY_RE}\s+{_AGENTES_PY_RE}\s+([a-z][a-z0-9_-]*)(?:\s+(.*))?\s*\Z""", re.S)
+AGENTES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agentes")
+
+
+def _agentes_conhecidos():
+    """Names of the team agents (agentes/*.md). Listed here, not imported from agentes.py (runtime must not depend on it)."""
+    try:
+        return {f[:-3] for f in os.listdir(AGENTES_DIR) if f.endswith(".md")}
+    except OSError:
+        return set()
+
+
+def delegacao_em(comando):
+    """(agente, tarefa) if a shell command delegates to a team agent through agentes.py, else None."""
+    m = AGENTE_CMD_RE.match(str(comando or ""))
+    if not m or m.group(1) not in _agentes_conhecidos():
+        return None
+    return m.group(1), (m.group(2) or "").strip().strip("\"'")
+
+
 def tool_event(block, parent=None):
-    """Action-log event for a tool_use block; a delegation to a subagent also carries who and why (for the timeline)."""
+    """Action-log event for a tool_use block; a delegation to a team agent also carries who and why (for the timeline)."""
     inp = block.get("input") or {}
     ev = dict(t="tool", phase="use", id=block.get("id"), parent=parent, name=block.get("name", "tool"), input=_short(inp))
     if ev["name"] in AGENT_TOOLS and isinstance(inp, dict):
         ev.update(agent=str(inp.get("subagent_type") or "agente"), desc=_short(inp.get("description") or inp.get("prompt") or "", 80))
+    elif ev["name"] in SHELL_TOOLS and isinstance(inp, dict):
+        d = delegacao_em(inp.get("command") or inp.get("CommandLine"))
+        if d:
+            ev.update(agent=d[0], desc=_short(d[1], 80))
     return ev
 
 
@@ -299,6 +341,7 @@ def _run_locked(message, session_id=None, system=None, full=True):
         return
     try:
         env["PYTHONUTF8"] = "1"
+        env["FEDORA_MOTOR_TURNO"] = "claude"   # agents that exist on both subscriptions follow the engine of this turn
         proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         with _ACTIVE_LOCK:
@@ -345,6 +388,7 @@ def _run_locked(message, session_id=None, system=None, full=True):
     finished = False
     first = True
     last = time.monotonic()
+    pendentes = set()   # tool_use ids still waiting for their tool_result
 
     try:
         while not done.is_set() or q:
@@ -359,10 +403,11 @@ def _run_locked(message, session_id=None, system=None, full=True):
             if line is None:
                 if proc.poll() is not None and done.is_set():
                     break
-                if time.monotonic() - last > IDLE_TIMEOUT:
+                limite = limite_ocioso(bool(pendentes))
+                if time.monotonic() - last > limite:
                     kill_tree(proc)
                     yield dict(t="error", message=(
-                        f"Claude went quiet for {IDLE_TIMEOUT}s and was stopped. "
+                        f"Claude went quiet for {limite}s and was stopped. "
                         + " | ".join(list(errbuf)[-3:]))[:400])
                     return
                 time.sleep(0.04)
@@ -425,12 +470,15 @@ def _run_locked(message, session_id=None, system=None, full=True):
                         text_seen = True
                         yield dict(t="delta", text=block["text"])
                     elif btype == "tool_use":
+                        if block.get("id"):
+                            pendentes.add(block["id"])
                         yield tool_event(block, ev.get("parent_tool_use_id"))
                 continue
 
             if kind == "user":
                 for block in (ev.get("message") or {}).get("content") or []:
                     if block.get("type") == "tool_result":
+                        pendentes.discard(block.get("tool_use_id"))
                         res = dict(t="tool", phase="result", id=block.get("tool_use_id"),
                                    parent=ev.get("parent_tool_use_id"),
                                    ok=not block.get("is_error"),
@@ -503,8 +551,12 @@ def run_mock(message, session_id=None, system=None):
 
 
 def motor_atual(motor=None):
-    """Motor deste turno: 'claude' ou 'agy'. Qualquer outro valor cai no Claude (nunca num motor desconhecido)."""
+    """Motor deste turno: 'claude' ou 'agy'. 'auto' aplica a regra de uso do Claude (semana > 55% ou sessao de 5 h >= 90%,
+    motor_regra); qualquer outro valor cai no Claude (nunca num motor desconhecido)."""
     motor = (motor or MOTOR or "claude").strip().lower()
+    if motor == "auto":
+        import motor_regra
+        return motor_regra.decidir(LIMITS)
     return motor if motor in ("claude", "agy") else "claude"
 
 
@@ -531,6 +583,24 @@ if __name__ == "__main__":
     e = tool_event(dict(id="t2", name="Read", input=dict(file_path="a.py")), parent="t1")
     assert "agent" not in e and e["parent"] == "t1" and e["input"] == "a.py", e
     assert tool_event(dict(name="Agent", input={}))["agent"] == "agente"
+    # delegation through the shell (any engine): agent and task show up in the timeline; "listar"/--teste/plain shell do not
+    e = tool_event(dict(id="s1", name="Bash", input=dict(command='"C:/Users/Pedro/p/.venv/Scripts/python.exe" "C:/Users/Pedro/p/agentes.py" flash "ajuste o README"')))
+    assert e["agent"] == "flash" and e["desc"] == "ajuste o README", e
+    e = tool_event(dict(id="s2", name="run_command", input=dict(CommandLine="python agentes.py qa -")))
+    assert e["agent"] == "qa", e
+    for nao in ("python agentes.py listar", "python agentes.py --teste", "git status", "python agentes.py", "cat docs/agentes.py.md",
+                "git diff agentes.py runtime.py", "git add agentes.py docs", "python agentes.py runtime.py", "python agentes.py qa.md x",
+                "python agentes.py inexistente x", "echo python agentes.py qa x", "cat agentes.py qa", "pythonx agentes.py qa x",
+                "python meuagentes.py qa x", "python agentes.pyc qa x"):
+        assert "agent" not in tool_event(dict(name="Bash", input=dict(command=nao))), nao
+        assert delegacao_em(nao) is None, nao
+    for sim, esperado in (('"C:/Users/Pedro/p/.venv/Scripts/python.exe" "C:/Users/Pedro/p/agentes.py" qa "revise"', ("qa", "revise")),
+                          (r'"C:\Users\Pedro\p\.venv\Scripts\python.exe" "C:\Users\Pedro\p\agentes.py" senior "x y"', ("senior", "x y")),
+                          (r".venv\Scripts\python.exe agentes.py junior 'ajuste'", ("junior", "ajuste")),
+                          ("'/c/Program Files/Python/python.exe' '/c/My Docs/agentes.py' flash ajuste", ("flash", "ajuste")),
+                          ("py agentes.py argon -", ("argon", "-")), ("python ./agentes.py qa -", ("qa", "-")),
+                          ("Python.EXE agentes.py qa", ("qa", "")), ("  python agentes.py qa  x\n", ("qa", "x"))):
+        assert delegacao_em(sim) == esperado, (sim, delegacao_em(sim))
     assert motor_atual("agy") == "agy" and motor_atual(" AGY ") == "agy" and motor_atual("claude") == "claude"
     assert motor_atual("gpt") == "claude" and motor_atual("") == motor_atual(None)   # desconhecido cai no Claude, nunca num motor solto
     assert escalar_em("ESCALAR: mexe em DENY") and escalar_em([{"type": "text", "text": "Feito.\n  ESCALAR : precisa do senior"}])
@@ -640,6 +710,36 @@ if __name__ == "__main__":
     out = evs(run_claude("x"))
     assert out[-1]["t"] == "error" and "quiet" in out[-1]["message"], out
     assert neto_morto(), "IDLE_TIMEOUT left the grandchild running"
+
+    # a tool still running (tool_use without tool_result) pauses the idle count up to the hard ceiling
+    assert limite_ocioso(False) == 1 and limite_ocioso(True) == max(1, AGENTE_TIMEOUT + 60)
+    AGENTE_TIMEOUT = -57   # ceiling = max(IDLE_TIMEOUT=1, 3) = 3 s
+    lenta = os.path.join(tmp, "fake_tool.py")
+    uso = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "x"}}]}}
+    resultado = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}]}}
+    fim = {"type": "result", "subtype": "success", "result": "feito", "usage": {}}
+    with open(lenta, "w", encoding="utf-8") as fh:
+        fh.write("import json, sys, time\n"
+                 f"print(json.dumps({uso!r}), flush=True)\n"
+                 "time.sleep(float(sys.argv[-1]))\n"
+                 f"print(json.dumps({resultado!r}), flush=True)\n"
+                 "time.sleep(float(sys.argv[-2]))\n"
+                 f"print(json.dumps({fim!r}), flush=True)\n")
+    real_build = build_command
+    try:
+        for pausa_tool, pausa_depois, ok_esperado in (("2", "0", True), ("10", "0", False), ("0", "2", False)):
+            build_command = lambda *a, **k: [sys.executable, lenta, pausa_depois, pausa_tool]   # noqa: E731
+            t0 = time.monotonic()
+            out = list(run_claude("x"))
+            if ok_esperado:   # 2 s quiet with the tool running: over IDLE_TIMEOUT (1 s) but under the ceiling (3 s)
+                assert out[-1]["t"] == "complete" and any(e.get("t") == "delta" and e["text"] == "feito" for e in out), out
+            elif pausa_tool == "10":   # tool never answers: stopped at the ceiling, not at 10 s
+                assert out[-1]["t"] == "error" and "quiet for 3s" in out[-1]["message"] and time.monotonic() - t0 < 8, out
+            else:   # tool done, then quiet: the normal IDLE_TIMEOUT is back
+                assert out[-1]["t"] == "error" and "quiet for 1s" in out[-1]["message"], out
+    finally:
+        build_command = real_build
+    AGENTE_TIMEOUT = 300
     IDLE_TIMEOUT = 180
 
     gen = run_claude("x")

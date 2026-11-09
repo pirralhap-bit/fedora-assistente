@@ -39,6 +39,7 @@ import commands    # noqa: E402
 import conversa    # noqa: E402
 import listener    # noqa: E402
 import memory      # noqa: E402
+import motor_regra  # noqa: E402
 import notes       # noqa: E402
 import runtime     # noqa: E402
 import speech      # noqa: E402
@@ -243,6 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             g = memory.build_graph()
             return self._json(dict(
                 runtime=runtime.runtime_kind(), version=runtime.version(), motor=runtime.motor_atual(),
+                motor_motivo=(motor_regra.ULTIMO["motivo"] if runtime.MOTOR == "auto" else f"forcado: {runtime.MOTOR}"
+                              if runtime.MOTOR in ("claude", "agy") else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude"),
                 model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
                 workdir=runtime.WORKDIR, vault=g["vault"], notes=g["total"],
                 links=len(g["links"]), session=SESSION["id"],
