@@ -39,9 +39,9 @@ _EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 APP_CMD = os.environ.get("FEDORA_APP_CMD", f'"{_EDGE}" --app={{url}}')
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
 
-START_TIMEOUT = {"command": 6.0, "dictate": 15.0}      # s esperando você começar a falar
-SILENCE = {"command": 1.5, "dictate": 3.0}             # s de silêncio que encerram a fala
-MAX_SECS = {"command": 30, "dictate": 600}
+START_TIMEOUT = {"command": 10.0, "dictate": 15.0}     # s esperando você começar a falar
+SILENCE = {"command": 3.0, "dictate": 4.0}             # s de silêncio que encerram a fala
+MAX_SECS = {"command": 90, "dictate": 600}
 MIN_SPEECH = 0.4                                        # s; menos que isso é clique/tosse
 AVISO_OCUPADA = "Espere a resposta (ou Esc)."           # atalho/clique com um turno do Claude rodando
 # o que o Whisper escreve quando ouve silêncio ou ruído (fim de vídeo do YouTube, créditos de legenda).
