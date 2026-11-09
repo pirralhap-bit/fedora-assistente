@@ -26,20 +26,29 @@ button{cursor:pointer;touch-action:manipulation}
 
 /* ---------- home: the black hole ---------- */
 #home{position:fixed;inset:0}
-#sky,#hole{position:absolute;inset:0;width:100%;height:100%;display:block}
-#hole{cursor:pointer}
-.orbit{position:absolute;left:0;top:0;display:grid;gap:1px;white-space:nowrap;pointer-events:none;will-change:transform}
-.orbit .k{font:300 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
-.orbit .v{font:300 22px var(--ui);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
-.orbit .s{font:300 11px var(--data);color:var(--faint)}
-.orbit.left{text-align:right}
-.orbit .v.hot{color:var(--warn)}
-.orbit .bar{position:absolute;left:-12px;top:3px;bottom:3px;width:2px;background:linear-gradient(0deg,var(--hot) var(--p),var(--faint) var(--p))}
-.orbit.foot{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px))}
-.orbit.fl{left:28px}
-.orbit.fr{left:auto;right:28px;text-align:right}
-.orbit.fr .bar{left:auto;right:-12px}
-.orbit .v.hot+.s+.bar{background:linear-gradient(0deg,var(--warn) var(--p),var(--faint) var(--p))}
+#left{position:absolute;left:0;top:0;bottom:0;width:60%;overflow:hidden}
+#sky,#hole,#brain{position:absolute;inset:0;width:100%;height:100%;display:block}
+#hole,#brain{cursor:pointer}
+/* bloco "sistema" (topo do painel da direita, fora da área do cérebro): PC em duas colunas, plano do Claude em destaque */
+#sys{display:grid;gap:10px;padding-bottom:10px;margin-bottom:8px;border-bottom:1px solid #15140f}
+.sg h2{margin:0 0 6px;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+#orbits,#clm{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px}
+#clm{grid-template-columns:1fr;gap:9px}
+.m{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:10px;row-gap:4px;min-width:0}
+.m .k{font:300 11px var(--data);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.m .v{font:400 14px var(--ui);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.m .v.hot{color:var(--warn)}
+.m .v.hot::before{content:"▲ ";font-size:10px}
+.m .bar{grid-column:1/-1;position:relative;height:3px;background:#1a1812;overflow:hidden}
+.m .bar::after{content:"";position:absolute;inset:0;background:var(--hot);transform:scaleX(var(--p,0));transform-origin:left;transition:transform .6s ease-out}
+.m .v.hot~.bar::after{background:var(--warn)}
+.m .s{grid-column:1/-1;display:none;font:300 11px var(--data);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#clm .m{grid-template-columns:auto minmax(0,1fr) auto}
+#clm .m .v{font-size:16px;font-weight:300;order:3}
+#clm .s{display:block;grid-column:auto;order:2;text-align:right}
+#clm .bar{order:4}
+#orbits .m.wide{grid-column:1/-1}
+#orbits .m.wide .v{text-align:left}
 .voice{position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   width:min(640px,calc(100% - 32px));display:grid;gap:10px;justify-items:center;text-align:center}
 .state{font:400 11px var(--data);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);display:flex;gap:10px;align-items:center}
@@ -52,8 +61,6 @@ body[data-v="think"] .state i{background:var(--cool)}
 .reply.long pre{overflow-x:auto;padding:8px 0 8px 12px;border-left:2px solid var(--faint)}
 .reply.long table{border-collapse:collapse;font-size:13px;display:block;overflow-x:auto}
 .reply.long th,.reply.long td{padding:3px 12px 3px 0;text-align:left}
-#tlhome .tl{max-width:56ch;margin:0 auto 6px}
-#tlhome:empty{display:none}
 .cmds{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;font-size:13px}
 .cmd{background:none;border:0;padding:4px 0;color:var(--dim);border-bottom:1px solid transparent}
 .cmd:hover{color:var(--ink);border-bottom-color:var(--faint)}
@@ -65,6 +72,29 @@ body[data-v="think"] .state i{background:var(--cool)}
 .mute:hover{color:var(--ink)}
 .mute[aria-pressed="true"]{color:var(--warn)}
 .proto{max-width:calc(100% - 32px);text-align:center;position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font:400 10px var(--data);letter-spacing:.24em;text-transform:uppercase;color:var(--faint)}
+
+/* ---------- home, right half: timeline of our conversations ---------- */
+#tline{box-sizing:border-box;position:absolute;right:0;top:0;bottom:0;width:40%;display:flex;flex-direction:column;min-height:0;border-left:1px solid #15140f;background:rgba(3,3,5,.55);
+  padding:calc(20px + env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) 20px 32px}
+.tlh{display:flex;align-items:baseline;justify-content:space-between;padding-bottom:14px}
+.tlh h2{margin:0;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+#tlist{flex:1;min-height:0;overflow-y:auto;padding:0 6px 8px 0;scrollbar-width:thin;scrollbar-color:var(--faint) transparent}
+#tlist:empty::before{content:"Nada por aqui ainda. O que a gente conversar aparece nesta linha.";color:var(--faint);font-size:13px}
+.td{margin:18px 0 6px 20px;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.td:first-child{margin-top:0}
+.te{position:relative;margin:0 0 14px 3px;padding:0 0 0 20px;border-left:1px solid var(--faint)}
+.te::before{content:"";position:absolute;left:-4px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.te.live::before{background:var(--hot);box-shadow:0 0 8px var(--hot);animation:tlp 1s ease-in-out infinite}
+.te.bad::before{background:var(--warn)}
+.te time{font:300 11px var(--data);color:var(--faint)}
+.te time b{font-weight:400;color:var(--dim);margin-left:8px;letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+.te .ty{color:var(--ink);font-size:14px;margin:2px 0;overflow-wrap:anywhere}
+.te .ta{color:var(--dim);font-size:13px;line-height:1.55;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;cursor:pointer;white-space:pre-wrap}
+.te .ta:empty{display:none}
+.te.open .ta{-webkit-line-clamp:unset;display:block;color:var(--ink)}
+.te .tk{margin-top:3px;font:300 11px var(--data);color:var(--faint);display:grid;gap:1px}
+.te .tk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.te .tk .bad{color:var(--warn)}
 
 /* ---------- #notas: the writing page ---------- */
 #notes{position:fixed;inset:0;display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 1fr auto;
@@ -135,12 +165,13 @@ body[data-v="think"] .state i{background:var(--cool)}
 
 @media (max-width:760px){
   body{overflow:auto}
+  #left{width:100%;bottom:auto;height:62%}
+  #tline{width:100%;top:62%;border-left:0;border-top:1px solid #15140f;padding:12px 16px 12px}
   #notes{position:static;min-height:100%;grid-template-columns:1fr;grid-template-rows:auto auto 1fr auto}
   .days{display:flex;overflow-x:auto;gap:16px;padding-bottom:10px}.days h2{display:none}.day{white-space:nowrap}
   #text{min-height:55vh;font-size:17px}
   .heard{font-size:20px}
-  .orbit .s{display:none}.orbit .v{font-size:17px;max-width:calc(50vw - 28px);overflow:hidden;text-overflow:ellipsis}.orbit.left{text-align:left}
-  .voice{gap:6px}.reply:empty{display:none}
+  .voice{gap:6px;bottom:calc(28px + env(safe-area-inset-bottom,0px))}.reply:empty{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -149,21 +180,31 @@ body[data-v="think"] .state i{background:var(--cool)}
 
 <section id="home" aria-label="Fedora">
   <canvas id="sky" aria-hidden="true"></canvas>
+  <div id="left">
+  <canvas id="brain" role="button" tabindex="0" aria-label="Cérebro da Fedora: mostra o que ela está fazendo. Toque ou aperte Espaço para falar. Arraste para girar."></canvas>
   <canvas id="hole" role="button" tabindex="0" aria-label="Buraco negro da Fedora. Toque ou aperte Espaço para falar sem dizer o nome."></canvas>
   <div class="proto" id="status">conectando…</div>
-  <div id="orbits" aria-label="Sistema e vault"></div>
   <div class="voice">
     <div class="state" id="state"><i aria-hidden="true"></i><span id="state-t">Toque ou aperte Espaço para falar</span></div>
     <div class="heard" id="heard" aria-live="polite"></div>
-    <div id="tlhome"></div>
     <div class="reply" id="reply" aria-live="polite"></div>
     <div class="cmds" id="cmds"></div>
     <form class="typed" id="typed">
       <label class="sr" for="cmd">Comando</label>
       <input id="cmd" name="comando" autocomplete="off" placeholder="ou digite um comando…">
+      <button type="button" class="mute" id="visual" title="Trocar o visual da tela inicial">visual: cérebro</button>
       <button type="button" class="mute" id="mute" aria-pressed="false">mic ligado</button>
     </form>
   </div>
+  </div>
+  <aside id="tline" aria-label="Sistema e linha do tempo das conversas">
+    <div id="sys">
+      <section class="sg" aria-labelledby="h-pc"><h2 id="h-pc">Computador</h2><div id="orbits"></div></section>
+      <section class="sg" aria-labelledby="h-cl"><h2 id="h-cl">Plano do Claude</h2><div id="clm"></div></section>
+    </div>
+    <header class="tlh"><h2>Conversas</h2><button type="button" class="mute" id="tlclear" title="Limpa só esta lista, não apaga nada do PC">limpar</button></header>
+    <div id="tlist" aria-live="polite"></div>
+  </aside>
 </section>
 
 <section id="notes" aria-label="Notas diárias" hidden>
@@ -220,7 +261,7 @@ class Hole{
     this.p=Array.from({length:count},()=>{const r=1.35+Math.pow(Math.random(),1.6)*2.1;return{r,a:Math.random()*Math.PI*2,z:(Math.random()-.5)*.08*r,s:.6+Math.random()*1.4,k:Math.random()}});
     this.resize()}
   resize(){const d=devicePixelRatio||1,w=this.cv.clientWidth,h=this.cv.clientHeight;this.w=w;this.h=h;this.cv.width=w*d;this.cv.height=h*d;this.cx.setTransform(d,0,0,d,0,0);
-    const narrow=this.scale===1&&w<760;this.R=this.r||Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.r||this.scale>1?h/2:h*(narrow?.2:.44)}
+    const narrow=this.scale===1&&innerWidth<760;this.R=this.r||Math.min(w,h)*(narrow?.09:.11)*this.scale;this.X=w/2;this.Y=this.r||this.scale>1?h/2:h*(narrow?.2:.44)}
   col(r,alpha){const t=Math.max(0,Math.min(1,(r-1.35)/2.1));// hot white inside, amber, then deep red outside
     const c=t<.25?[255,241,214]:t<.6?[255,177,92]:[214,92,52];return`rgba(${c[0]},${c[1]},${c[2]},${alpha})`}
   frame(dt){
@@ -260,8 +301,208 @@ class Hole{
 function stars(cv){const d=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;cv.width=w*d;cv.height=h*d;const x=cv.getContext('2d');x.setTransform(d,0,0,d,0,0);
   for(let i=0;i<Math.round(w*h/2600);i++){const a=Math.random();x.fillStyle=`rgba(${a>.9?'190,205,255':'236,230,220'},${.15+Math.random()*.5})`;x.fillRect(Math.random()*w,Math.random()*h,a>.97?1.6:1,a>.97?1.6:1)}}
 
-const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,r:17}),chole=new Hole($('chole'),{count:420,r:17});
+// ================= brain renderer: a live map of what the AI is doing (3D by hand on a 2D canvas, no libs) =================
+// Each region is a capability. Rest: dim, breathing. Processing: nodes/connections flicker, planner + core light up.
+// Executing: the region for the tool in use glows and particles run along the tracts from the planner to it.
+const REG={ // id: [label, [centres x,y,z]]; x>0 is the right hemisphere, front is +z, up is +y
+  planejar:['planejar',[[.38,.15,.72],[-.38,.15,.72]]],
+  agir:['agir',[[.40,.45,.18],[-.40,.45,.18]]],
+  ler:['ler',[[.38,.40,-.32],[-.38,.40,-.32]]],
+  web:['web',[[.25,.05,-.82],[-.25,.05,-.82]]],
+  ouvir:['ouvir',[[.58,-.25,.10],[-.58,-.25,.10]]],
+  falar:['falar',[[-.52,-.10,.50]]],
+  memoria:['memória',[[.18,-.18,0],[-.18,-.18,0]]],
+  reflexos:['reflexos',[[0,-.42,-.68]]],
+  nucleo:['núcleo',[[0,-.6,-.3]]]};
+const RK=Object.keys(REG),YC=-.08;
+// padronização de cores do cofre (Implementação de Agentes): frontal azul, central dourado, temporal roxo, parietal ciano, occipital magenta, cerebelo verde, tronco laranja
+const RC={planejar:[88,150,255],nucleo:[255,196,60],memoria:[168,110,255],ler:[60,220,235],ouvir:[60,220,235],web:[240,80,200],reflexos:[80,220,120],agir:[255,128,40],falar:[255,128,40]};
+const NB=2+4*RK.length;
+const TRACTS=[['planejar','agir'],['planejar','ler'],['planejar','web'],['planejar','ouvir'],['planejar','falar'],['planejar','memoria'],['planejar','reflexos'],['planejar','nucleo'],
+  ['agir','ler'],['ler','web'],['memoria','ouvir'],['memoria','ler'],['ouvir','falar'],['nucleo','memoria'],['reflexos','agir']];
+function regionForTool(ev){const n=ev.name||'',i=ev.input||'';
+  if(ev.agent||/^(Agent|Task|TodoWrite)$/.test(n))return'planejar';
+  if(/^(Read|Grep|Glob|LS)$/.test(n))return/vault|obsidian|00-INB|daily/i.test(i)?'memoria':'ler';
+  if(/^(WebSearch|WebFetch)$|chrome|playwright|browser/i.test(n))return'web';
+  return'agir'}   // Bash, PowerShell, Edit, Write and anything unknown
+class Brain{
+  constructor(cv){this.cv=cv;this.cx=cv.getContext('2d');this.t=0;this.yawOff=0;this.hover=false;this.moved=false;this.dn=null;this.level=0;this.voice='idle';this.think=false;
+    this.hold=new Map();this.timed={};this.act={};this.heat={};this.detail={};this.parts=[];this.walk=[];this.acc=0;this.tacc=0;this.wacc=0;this.o=[0,0,0];
+    for(const k of RK){this.act[k]=0;this.heat[k]=0;this.timed[k]=0;this.detail[k]=''}
+    this.build();this.resize();
+    // drag to turn it (a drag is not a click, so it never starts the microphone)
+    cv.addEventListener('pointerdown',e=>{this.dn={x:e.clientX,o:this.yawOff};this.moved=false;try{cv.setPointerCapture(e.pointerId)}catch{}});
+    cv.addEventListener('pointermove',e=>{if(!this.dn)return;const dx=e.clientX-this.dn.x;if(Math.abs(dx)>5)this.moved=true;if(this.moved)this.yawOff=this.dn.o+dx*.008});
+    const up=()=>{this.dn=null;setTimeout(()=>{this.moved=false},60)};
+    cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+    cv.addEventListener('pointerenter',()=>{this.hover=true});cv.addEventListener('pointerleave',()=>{this.hover=false})}
+  build(){
+    let s=20261108;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+    const pts=[],reg=[],grp=[],cerebral=['planejar','agir','ler','web','ouvir','falar','memoria'];
+    const regionOf=(x,y,z)=>{let best='agir',bd=9;for(const k of cerebral)for(const c of REG[k][1]){const d=(x-c[0])**2+(y-c[1])**2+(z-c[2])**2;if(d<bd){bd=d;best=k}}return best};
+    for(const h of[-1,1]){const n=760;   // one hemisphere: a deformed ellipsoid, 62% on the surface and the rest filling the inside
+      for(let i=0;i<n;i++){const ns=Math.round(n*.62),surf=i<ns,j=surf?i:i-ns,k=(j+.5)/(surf?ns:n-ns),phi=Math.acos(1-2*k),th=Math.PI*(1+Math.sqrt(5))*j,rr=surf?1:.12+.8*Math.cbrt(rnd());   // inside: even by volume, so the core is never empty
+        let ux=Math.sin(phi)*Math.cos(th)*rr,uy=Math.cos(phi)*rr,uz=Math.sin(phi)*Math.sin(th)*rr;
+        const med=ux*h<0;if(uy<0)uy*=.55;if(med&&surf)ux=Math.sign(ux)*(1-(1-Math.abs(ux))*.2);   // flat wall facing the fissure
+        let x=ux*.42*(.82+.18*(1-uz)/2),y=uy*.55,z=uz;
+        if(surf){const w=1+.05*Math.sin(8*ux+3*uy+h)*Math.sin(7*uz-2*ux)+.04*Math.sin(11*uz+5*uy)*Math.cos(6*ux);x*=w;y*=w;z*=w}   // gyri
+        if(!med){const bump=Math.exp(-(((uz-.25)/.4)**2)-(((uy+.3)/.3)**2)),syl=Math.exp(-(((uy+.1)/.12)**2)-(((uz-.3)/.35)**2));
+          x+=h*.06*bump;y-=.08*bump;if(surf){x*=1-.07*syl;y*=1-.07*syl}}                                // temporal lobe + lateral groove
+        const X=h*.45+x;pts.push(X,y,z);reg.push(regionOf(X,y,z));grp.push(h)}}
+    for(let i=0;i<170;i++){const k=(i+.5)/170,phi=Math.acos(1-2*k),th=Math.PI*(1+Math.sqrt(5))*i,ux=Math.sin(phi)*Math.cos(th),uy=Math.cos(phi),uz=Math.sin(phi)*Math.sin(th),r=1+.05*Math.sin(22*uy);
+      pts.push(.40*ux*r,-.42+.17*uy*r,-.68+.27*uz*r);reg.push('reflexos');grp.push(2)}                  // cerebellum
+    for(let i=0;i<36;i++){const t=i/35,a=rnd()*6.283;pts.push(Math.cos(a)*.06,-.32-t*.40,-.22-t*.12+Math.sin(a)*.06);reg.push('nucleo');grp.push(3)} // brainstem
+    const N=reg.length;this.N=N;this.P=Float32Array.from(pts);this.reg=Uint8Array.from(reg,r=>RK.indexOf(r));this.regs=reg;
+    this.by={};for(const k of RK)this.by[k]=[];reg.forEach((r,i)=>this.by[r].push(i));
+    // 3 nearest neighbours inside the same group make the mesh
+    const adj=Array.from({length:N},()=>[]),seen=new Set(),E=[],P=this.P;
+    for(let i=0;i<N;i++){const near=[];for(let j=0;j<N;j++){if(j===i||grp[j]!==grp[i])continue;const d=(P[i*3]-P[j*3])**2+(P[i*3+1]-P[j*3+1])**2+(P[i*3+2]-P[j*3+2])**2;
+        if(near.length<3||d<near[2][0]){near.push([d,j]);near.sort((a,b)=>a[0]-b[0]);if(near.length>3)near.pop()}}
+      for(const[,j]of near){const a=Math.min(i,j),b=Math.max(i,j),key=a*N+b;adj[i].push(j);if(!adj[j].includes(i))adj[j].push(i);if(!seen.has(key)){seen.add(key);E.push(a,b)}}}
+    this.adj=adj;this.E=E.length/2;this.ea=Int32Array.from(E.filter((_,i)=>i%2===0));this.eb=Int32Array.from(E.filter((_,i)=>i%2===1));
+    this.glow=new Float32Array(N);this.bk=Array.from({length:NB},()=>new Int32Array(this.E));this.bn=new Int32Array(NB);this.SX=new Float32Array(N);this.SY=new Float32Array(N);this.SZ=new Float32Array(N);
+    // hubs (one per region and hemisphere) and the long tracts between regions
+    const hub=(r,h)=>{let best=-1,bd=9;const cs=REG[r][1].filter(c=>h===0||Math.sign(c[0])===h||c[0]===0);if(!cs.length)return-1;
+      for(const i of this.by[r]){if(h&&grp[i]!==h&&grp[i]<2)continue;for(const c of cs){const d=(P[i*3]-c[0])**2+(P[i*3+1]-c[1])**2+(P[i*3+2]-c[2])**2;if(d<bd){bd=d;best=i}}}return best};
+    this.hubs={};for(const k of RK)this.hubs[k]=[hub(k,-1),hub(k,1)].filter(i=>i>=0).filter((v,i,a)=>a.indexOf(v)===i);
+    this.tracts=[];const NS=18,mk=(ra,rb,ia,ib,up)=>{if(ia<0||ib<0||ia===ib)return;const a=[P[ia*3],P[ia*3+1],P[ia*3+2]],b=[P[ib*3],P[ib*3+1],P[ib*3+2]],m=a.map((v,i)=>(v+b[i])/2);
+      let c;if(up)c=[m[0],m[1]+.3,m[2]];else{const l=Math.hypot(m[0],m[1]-.1,m[2])||1;c=[m[0]+m[0]/l*.35,m[1]+(m[1]-.1)/l*.35,m[2]+m[2]/l*.35]}
+      const q=new Float32Array(NS*3);for(let s=0;s<NS;s++){const t=s/(NS-1),u=1-t;for(let d=0;d<3;d++)q[s*3+d]=u*u*a[d]+2*u*t*c[d]+t*t*b[d]}
+      this.tracts.push({a:ra,b:rb,n:NS,q,sx:new Float32Array(NS),sy:new Float32Array(NS),flash:0})};
+    for(const[ra,rb]of TRACTS)for(const h of[-1,1])mk(ra,rb,hub(ra,h)>=0?hub(ra,h):hub(ra,0),hub(rb,h)>=0?hub(rb,h):hub(rb,0),false);
+    for(const r of['planejar','agir','ler','ouvir','memoria','web'])mk(r,r,hub(r,-1),hub(r,1),true);   // corpus callosum
+    this.tracts=this.tracts.filter((t,i,a)=>a.findIndex(u=>u.a===t.a&&u.b===t.b&&u.q[0]===t.q[0]&&u.q[(t.n-1)*3]===t.q[(t.n-1)*3])===i)}
+  resize(){const d=devicePixelRatio||1,w=this.cv.clientWidth,h=this.cv.clientHeight;this.w=w;this.h=h;this.cv.width=w*d;this.cv.height=h*d;this.cx.setTransform(d,0,0,d,0,0);
+    const narrow=innerWidth<760;this.R=Math.min(w,h)*(narrow?.09:.11);this.X=w/2;this.Y=h*(narrow?.2:.44);this.U=this.R*3}
+  // ---- what the page tells the brain ----
+  use(ev){this.hold.set(ev.id||('k'+Math.random()),{r:regionForTool(ev),min:this.t+.9,done:false,detail:(ev.agent||ev.name||'').toString().slice(0,22)})}
+  end(ev){const h=this.hold.get(ev.id);if(h)h.done=true}
+  clear(){for(const h of this.hold.values())h.done=true}
+  pulse(r,secs,detail){this.timed[r]=this.t+secs;this.detail[r]=detail||''}
+  glowAt(i,g){if(this.glow[i]<g)this.glow[i]=g;for(const j of this.adj[i])if(this.glow[j]<g*.55)this.glow[j]=g*.55}
+  frame(dt){
+    const{cx,w,h,X,Y,N,P,glow,SX,SY,SZ,ea,eb,E,act,heat}=this;this.t+=dt;const t=this.t;
+    // --- targets: who is active and with what colour (amber = doing, blue = thinking) ---
+    const tg={},hot={};for(const k of RK){tg[k]=0;hot[k]=0}
+    let exec=false;
+    for(const[id,hd]of this.hold){if(hd.done&&t>hd.min){this.hold.delete(id);continue}tg[hd.r]=1;hot[hd.r]=1;exec=true;this.detail[hd.r]=hd.detail}
+    for(const k of RK)if(this.timed[k]>t){tg[k]=1;hot[k]=1;exec=true}
+    if(this.voice==='listen'||this.voice==='dict'){tg.ouvir=Math.max(tg.ouvir,Math.min(1,.4+this.level*3));hot.ouvir=1;exec=true;this.detail.ouvir=this.voice==='dict'?'ditado':'microfone'}
+    const think=this.think&&!exec;
+    if(this.think){tg.planejar=Math.max(tg.planejar,.7);tg.nucleo=Math.max(tg.nucleo,.6)}
+    if(exec||this.think)tg.planejar=Math.max(tg.planejar,.4);   // the planner always dispatches
+    let top=0;for(const k of RK){act[k]+=(tg[k]-act[k])*Math.min(1,dt*7);heat[k]+=(hot[k]-heat[k])*Math.min(1,dt*6);top=Math.max(top,act[k])}
+    // --- life: sparkles, tract flashes, particles, walkers ---
+    for(let i=0;i<N;i++)glow[i]*=Math.exp(-dt*2.4);
+    for(const tr of this.tracts)tr.flash*=Math.exp(-dt*2.2);
+    const rate=think?55:exec?16:.8;this.acc+=rate*dt;
+    const W={planejar:4,nucleo:1,ler:1.5,memoria:1.5,agir:1,falar:1,ouvir:.8,web:.8,reflexos:.6};
+    while(this.acc>=1){this.acc--;let r;
+      if(think){let x=Math.random()*14.2;r='planejar';for(const k in W){x-=W[k];if(x<=0){r=k;break}}}
+      else if(exec){const on=RK.filter(k=>act[k]>.3);r=on.length?on[(Math.random()*on.length)|0]:'planejar'}
+      else r=RK[(Math.random()*RK.length)|0];
+      const L=this.by[r];if(L.length)this.glowAt(L[(Math.random()*L.length)|0],think?.9:exec?1:.45)}
+    if(think){this.tacc+=7*dt;while(this.tacc>=1){this.tacc--;const tr=this.tracts[(Math.random()*this.tracts.length)|0];if(tr){tr.flash=1;if(this.parts.length<140)this.parts.push({tr,t:0,v:.8+Math.random()*.6,dir:Math.random()<.5?1:-1})}}}
+    if(exec)for(const tr of this.tracts){const f=Math.min(act[tr.a],act[tr.b]);if(f>.3&&tr.a!==tr.b&&this.parts.length<140&&Math.random()<dt*7*f)this.parts.push({tr,t:0,v:.7+Math.random()*.5,dir:Math.random()<.75?1:-1})}
+    for(const p of this.parts)p.t+=p.v*dt;this.parts=this.parts.filter(p=>p.t<1);
+    // walkers: small lights that wander along the mesh inside an active region
+    const cnt={};for(const wk of this.walk)cnt[wk.r]=(cnt[wk.r]||0)+1;
+    for(const k of RK){const want=act[k]>.25?Math.round(act[k]*(k==='planejar'?9:15)):0;if((cnt[k]||0)<want&&this.walk.length<170&&this.by[k].length){const a=this.by[k][(Math.random()*this.by[k].length)|0];this.walk.push({r:k,a,b:this.adj[a][0]??a,t:Math.random(),v:2+Math.random()*2})}}
+    this.walk=this.walk.filter(wk=>{wk.t+=wk.v*dt;if(wk.t<1)return true;if(act[wk.r]<.15)return false;
+      const nb=this.adj[wk.b].filter(j=>j!==wk.a),same=nb.filter(j=>this.regs[j]===wk.r),pool=same.length?same:nb.length?nb:[wk.a];wk.a=wk.b;wk.b=pool[(Math.random()*pool.length)|0];wk.t=0;return true});
+    // --- camera: slow sway around a three-quarter side view, front to the left; drag to turn, it eases back ---
+    if(!this.dn)this.yawOff*=Math.exp(-dt*.5);
+    const yaw=-1.25+(reduce.matches?0:Math.sin(t*.18)*.32)+this.yawOff,pit=.15,cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);
+    const br=1+.18*Math.sin(t*1.25),U=this.U*(1+.012*Math.sin(t*1.25));
+    const pr=(x,y,z,o)=>{y-=YC;const x1=x*cy+z*sy,z1=-x*sy+z*cy,y1=y*cp-z1*sp,z2=y*sp+z1*cp,f=3.2/(3.2-z2);o[0]=X+x1*f*U;o[1]=Y-y1*f*U;o[2]=z2};
+    const o=this.o;for(let i=0;i<N;i++){pr(P[i*3],P[i*3+1],P[i*3+2],o);SX[i]=o[0];SY[i]=o[1];SZ[i]=o[2]}
+    for(const tr of this.tracts)for(let s=0;s<tr.n;s++){pr(tr.q[s*3],tr.q[s*3+1],tr.q[s*3+2],o);tr.sx[s]=o[0];tr.sy[s]=o[1]}
+    // --- draw ---
+    cx.clearRect(0,0,w,h);cx.globalCompositeOperation='lighter';
+    const mix=(k,b)=>{const c=RC[k];return b>.8?c.map(v=>v+(255-v)*(b-.8)*3):c};
+    const g=cx.createRadialGradient(X,Y,U*.2,X,Y,U*1.6),hc=RC[RK.reduce((m,k)=>act[k]>act[m]?k:m,'planejar')];
+    g.addColorStop(0,`rgba(${hc[0]|0},${hc[1]|0},${hc[2]|0},${(.035*br+top*.08).toFixed(3)})`);g.addColorStop(1,'rgba(0,0,0,0)');cx.fillStyle=g;cx.fillRect(0,0,w,h);
+    // volume haze: a soft elongated mass inside the mesh, so the middle reads as tissue and not as a hollow shell
+    cx.save();cx.translate(X,Y);cx.scale(1.55,.85);const vg=cx.createRadialGradient(0,0,0,0,0,U*.62);
+    vg.addColorStop(0,`rgba(${hc[0]*.5+75|0},${hc[1]*.5+85|0},${hc[2]*.5+105|0},${(.075*br+top*.07).toFixed(3)})`);vg.addColorStop(.6,`rgba(120,140,185,${(.03*br).toFixed(3)})`);vg.addColorStop(1,'rgba(0,0,0,0)');
+    cx.fillStyle=vg;cx.fillRect(-U,-U,U*2,U*2);cx.restore();
+    // edges in batches: 0-1 resting (far/near), then 4 brightness levels x one colour per region
+    this.bn.fill(0);
+    for(let e=0;e<E;e++){const a=ea[e],b=eb[e],ra=this.regs[a],v=Math.max(glow[a],glow[b])*.9+act[ra]*.4;let k;
+      if(v<.05)k=(SZ[a]+SZ[b])>0?1:0;else k=2+(Math.min(4,1+(((v-.05)*4.5)|0))-1)*RK.length+RK.indexOf(ra);this.bk[k][this.bn[k]++]=e}
+    const LA=[.06*br,.12*br];
+    for(let k=0;k<NB;k++){const n=this.bn[k];if(!n)continue;let col,al;
+      if(k<2){col=[150,170,205];al=LA[k]}else{const q=k-2,lv=((q/RK.length)|0)+1;col=RC[RK[q%RK.length]];al=[0,.14,.26,.42,.65][lv]}
+      cx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${al.toFixed(3)})`;cx.lineWidth=k<2?.6:.9;cx.beginPath();
+      for(let i=0;i<n;i++){const e=this.bk[k][i],a=ea[e],b=eb[e];cx.moveTo(SX[a],SY[a]);cx.lineTo(SX[b],SY[b])}cx.stroke()}
+    // tracts between regions: faint at rest, bright while both ends work
+    for(const tr of this.tracts){const f=Math.max(tr.flash,Math.min(act[tr.a],act[tr.b])*.9,Math.max(act[tr.a],act[tr.b])*.25),c=f>.05?RC[act[tr.a]>=act[tr.b]?tr.a:tr.b]:[150,170,205];
+      cx.strokeStyle=`rgba(${c[0]},${c[1]},${c[2]},${(.035*br+f*.55).toFixed(3)})`;cx.lineWidth=.7+f*.9;cx.beginPath();cx.moveTo(tr.sx[0],tr.sy[0]);for(let s=1;s<tr.n;s++)cx.lineTo(tr.sx[s],tr.sy[s]);cx.stroke()}
+    // resting nodes (3 depth tones), then the lit ones one by one
+    const tone=[[.20,1.3],[.32,1.6],[.48,2]];
+    for(let d=0;d<3;d++){cx.fillStyle=`rgba(150,170,205,${(tone[d][0]*br).toFixed(3)})`;const s=tone[d][1];
+      for(let i=0;i<N;i++){const dep=(SZ[i]+1)/2,dd=dep<.38?0:dep<.64?1:2;if(dd===d)cx.fillRect(SX[i]-s/2,SY[i]-s/2,s,s)}}
+    for(let i=0;i<N;i++){const r=this.regs[i],b=Math.min(1,glow[i]+act[r]*(.35+.25*Math.sin(t*5+i*1.7)));if(b<.06)continue;
+      const c=mix(r,b),dep=Math.max(.3,Math.min(1,(SZ[i]+1)/2+.25)),s=1.6+b*2.4;
+      cx.fillStyle=`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${Math.min(1,b*dep+.1).toFixed(3)})`;cx.fillRect(SX[i]-s/2,SY[i]-s/2,s,s);
+      if(b>.5){cx.fillStyle=`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${(b*.12).toFixed(3)})`;cx.fillRect(SX[i]-s*1.8,SY[i]-s*1.8,s*3.6,s*3.6)}}
+    // particles along tracts (with a short trail) and walkers along the mesh
+    const dot=(x,y,s,c,a)=>{cx.fillStyle=`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;cx.fillRect(x-s/2,y-s/2,s,s)};
+    const white=[255,241,214];
+    for(const p of this.parts){const tr=p.tr,pc=RC[act[tr.a]>=act[tr.b]?tr.a:tr.b];
+      for(let k=0;k<4;k++){const u=Math.min(1,Math.max(0,p.dir>0?p.t-k*.025:1-p.t+k*.025)),f=u*(tr.n-1),i0=Math.min(tr.n-2,f|0),fr=f-i0,
+        x=tr.sx[i0]+(tr.sx[i0+1]-tr.sx[i0])*fr,y=tr.sy[i0]+(tr.sy[i0+1]-tr.sy[i0])*fr;
+        if(k===0){dot(x,y,7,pc,.18);dot(x,y,3,white,.95)}else dot(x,y,2.4-k*.4,pc,.5-k*.11)}}
+    for(const wk of this.walk){const x=SX[wk.a]+(SX[wk.b]-SX[wk.a])*wk.t,y=SY[wk.a]+(SY[wk.b]-SY[wk.a])*wk.t,c=mix(wk.r,.6);dot(x,y,5,c,.2*act[wk.r]);dot(x,y,2.2,white,.9*Math.min(1,act[wk.r]*1.5))}
+    // labels: only on active regions (all of them while the pointer is over the brain)
+    cx.globalCompositeOperation='source-over';
+    try{cx.letterSpacing='1.6px'}catch{}
+    for(const k of RK){const a=Math.max(act[k]>.2?Math.min(1,act[k]*1.2):0,this.hover?.4:0);if(a<.05||!this.hubs[k].length)continue;
+      let i=this.hubs[k][0];for(const j of this.hubs[k])if(SZ[j]>SZ[i])i=j;
+      let dx=SX[i]-X,dy=SY[i]-Y;const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;
+      const x0=SX[i]+dx*5,y0=SY[i]+dy*5,x1=SX[i]+dx*50,y1=SY[i]+dy*50,c=RC[k],css=`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a.toFixed(3)})`;
+      cx.strokeStyle=css;cx.lineWidth=.8;cx.beginPath();cx.moveTo(x0,y0);cx.lineTo(x1,y1);cx.stroke();
+      cx.textAlign=dx<0?'right':'left';cx.fillStyle=css;cx.font='400 10.5px "JetBrains Mono",ui-monospace,monospace';cx.fillText(REG[k][0].toUpperCase(),x1+(dx<0?-5:5),y1+3);
+      if(act[k]>.2&&this.detail[k]){cx.fillStyle=`rgba(138,131,120,${a.toFixed(3)})`;cx.font='300 10px "JetBrains Mono",ui-monospace,monospace';cx.fillText(this.detail[k],x1+(dx<0?-5:5),y1+16)}}
+    try{cx.letterSpacing='0px'}catch{}}
+}
+
+const hole=new Hole($('hole')),mini=new Hole($('mini'),{count:420,r:17}),chole=new Hole($('chole'),{count:420,r:17}),brain=new Brain($('brain'));
 stars($('sky'));
+// home visual: the brain (default) or the black hole; remembered per browser
+let visual='brain';try{if(localStorage.getItem('fedora-visual')==='hole')visual='hole'}catch{}
+const head=()=>visual==='brain'?brain:hole;
+function setVisual(v,save=true){visual=v;if(save)try{localStorage.setItem('fedora-visual',v)}catch{}
+  $('brain').hidden=v!=='brain';$('hole').hidden=v!=='hole';$('visual').textContent=v==='brain'?'visual: cérebro':'visual: buraco negro';head().resize()}
+
+// ================= timeline of our conversations (right half; kept in this browser only) =================
+const TL_KEY='fedora-tl',TL_MAX=80;let tlData=[];try{tlData=JSON.parse(localStorage.getItem(TL_KEY)||'[]').filter(e=>e&&e.you)}catch{}
+const tlSave=()=>{try{localStorage.setItem(TL_KEY,JSON.stringify(tlData.slice(-TL_MAX).map(({at,you,ai,tools,canal,bad})=>({at,you,ai,tools,canal,bad}))))}catch{}};
+const tlList=$('tlist'),tlDay=ts=>fmt({day:'numeric',month:'long'},new Date(ts)),tlHour=ts=>fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'},new Date(ts));
+const tlDayName=ts=>{const d=tlDay(ts);return d===tlDay(Date.now())?'Hoje':d===tlDay(Date.now()-864e5)?'Ontem':d};
+const tlClip=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
+let tlLastDay='';
+function tlNode(e,live){
+  const d=tlDay(e.at);if(d!==tlLastDay){tlLastDay=d;tlList.append(el('div','td',tlDayName(e.at)))}
+  const box=el('div','te'+(live?' live':'')+(e.bad?' bad':'')),tm=el('time',null,tlHour(e.at)),
+    ty=el('div','ty',tlClip(e.you,300)),ai=el('div','ta',e.ai||''),tk=el('div','tk');
+  tm.append(el('b',null,e.canal==='chat'?'chat':'voz'));
+  ai.title='Clique para ver tudo';ai.onclick=()=>box.classList.toggle('open');
+  // resumo: trocas de agente em linhas próprias (as 3 últimas) e as demais ferramentas contadas numa linha só
+  const tools=()=>{const isAg=t=>t.agent||String(t.txt).startsWith('→'),cnt=new Map();
+    for(const t of e.tools)if(!isAg(t)){const n=t.name||String(t.txt).split(' ')[0];cnt.set(n,(cnt.get(n)||0)+1)}
+    const rows=e.tools.filter(isAg).slice(-3).map(t=>el('span',t.bad?'bad':'',t.txt)),
+      sum=[...cnt].slice(0,4).map(([n,c])=>c>1?`${n} ×${c}`:n).join(' · ')+(cnt.size>4?' …':'');
+    tk.replaceChildren(...rows,...(cnt.size?[el('span',null,sum)]:[]))};
+  tools();box.append(tm,ty,ai,tk);tlList.append(box);return{box,ai,tools}}
+function tlRender(){tlList.replaceChildren();tlLastDay='';tlData.forEach(e=>tlNode(e,false));tlList.scrollTop=tlList.scrollHeight}
+function tlTurn(you,canal){
+  const e={at:Date.now(),you:you||'',ai:'',tools:[],canal,bad:false},n=tlNode(e,true);tlData.push(e);tlList.scrollTop=tlList.scrollHeight;
+  return{ai(t){e.ai=tlClip(t,3000);n.ai.textContent=e.ai;tlList.scrollTop=tlList.scrollHeight},
+    tool(ev){const txt=ev.agent?`→ ${ev.agent}${ev.desc?': '+ev.desc:''}`:ev.name||'ferramenta';e.tools.push({txt:tlClip(txt,70),name:ev.name||'',agent:ev.agent||'',bad:false});n.tools()},
+    done(ok){e.bad=!ok;n.box.classList.remove('live');n.box.classList.toggle('bad',!ok);if(tlData.length>TL_MAX)tlData.splice(0,tlData.length-TL_MAX);tlSave()}}}
+$('tlclear').onclick=()=>{tlData=[];tlSave();tlRender()};
+tlRender();
 
 // ================= server =================
 const TOKEN='__JARVIS_TOKEN__';
@@ -283,36 +524,27 @@ const dash='—';
 const use=w=>{const u=S.claude&&S.claude[w];return u&&u.used!=null?u.used:null};
 const pct=w=>use(w)==null?dash:Math.round(use(w)*100)+'%';
 const renova=(w,o)=>use(w)==null?'aparece depois da 1ª pergunta':'renova '+new Date(S.claude[w].resets*1000).toLocaleString('pt-BR',{timeZone:tz,...o});
+const rate=b=>b==null?dash:b>=1048576?num.format(b/1048576)+' MB/s':Math.round(b/1024)+' KB/s';
+// [grupo, rótulo, valor, subtexto, barra 0..1]: PC em duas colunas, plano do Claude embaixo (tudo no painel da direita)
 const ITEMS=[
-  ['left',216,'hora',()=>fmt({hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>fmt({weekday:'long',day:'numeric',month:'long'})],
-  ['left',198,'cpu',()=>S.cpu==null?dash:Math.round(S.cpu)+'%',()=>S.threads?S.threads+' threads':''],
-  ['left',180,'ram',()=>S.ram==null?dash:`${num.format(S.ram)} / ${num.format(S.ram_total)} GB`,()=>'memória em uso'],
-  ['left',162,'gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'sem leitura da placa'],
-  ['left',144,'gemini',()=>{const g=S.gemini;return !g?'pronto':g.estado==='ok'?g.seg+' s':g.estado==='cota'?'cota esgotada':'sem resposta'},()=>{const g=S.gemini;return g?(g.modelo||'')+' · '+new Date(g.at*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'aparece no 1º atalho ou nota'}],
-  ['right',-30,'tokens',()=>{const l=S.claude&&S.claude.last;return l?num.format(l.total)+' tokens':dash},()=>{const l=S.claude&&S.claude.last;return l?'última pergunta · '+num.format(l.out)+' de resposta':'aparece depois da 1ª pergunta'}],
-  ['right',-12,'cofre',()=>V.total==null?dash:V.total+' notas',()=>V.inbox?V.inbox+' no inbox':'inbox vazio'],
-  ['right',6,'hoje',()=>V.today==null?dash:V.today+(V.today===1?' nota editada':' notas editadas'),()=>'últimas 24 horas'],
-  ['right',24,'última',()=>{const t=V.last?V.last.title.replace(/\.excalidraw$/,' (desenho)'):dash;return t.length>26?t.slice(0,25)+'…':t},()=>V.last?ago(V.last.at):''],
-  ['foot fl',0,'claude · 5h',()=>pct('five_hour'),()=>renova('five_hour',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('five_hour')],
-  ['foot fr',0,'claude · semana',()=>pct('seven_day'),()=>renova('seven_day',{weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('seven_day')],
+  ['orbits','cpu',()=>S.cpu==null?dash:Math.round(S.cpu)+'%',()=>S.threads?S.threads+' threads':'',()=>S.cpu==null?0:S.cpu/100],
+  ['orbits','ram',()=>S.ram==null?dash:`${num.format(S.ram)}/${num.format(S.ram_total)} GB`,()=>'memória em uso',()=>S.ram_total?S.ram/S.ram_total:0],
+  ['orbits','gpu',()=>S.gpu?S.gpu.busy+'%':dash,()=>S.gpu?`${num.format(S.gpu.vram)} / ${num.format(S.gpu.vram_total)} GB de VRAM`:'lendo a placa…',()=>S.gpu?S.gpu.busy/100:0],
+  ['orbits','disco',()=>S.disk?`${num.format(S.disk.used)}/${num.format(S.disk.total)} GB`:dash,()=>S.disk?`${S.disk.nome} · ${num.format(S.disk.total-S.disk.used)} GB livres`:'',()=>S.disk?S.disk.used/S.disk.total:0],
+  ['orbits','rede',()=>S.net?`↓ ${rate(S.net.down)}   ↑ ${rate(S.net.up)}`:dash,()=>'baixando e enviando'],
+  ['clm','janela de 5 h',()=>pct('five_hour'),()=>renova('five_hour',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('five_hour')],
+  ['clm','semana',()=>pct('seven_day'),()=>renova('seven_day',{weekday:'long',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),()=>use('seven_day')],
 ];
-const orbitEls=ITEMS.map(([side,,,,,bar])=>{const e=el('div','orbit '+side);e.append(el('div','k'),el('div','v'),el('div','s'));if(bar)e.append(el('div','bar'));$('orbits').append(e);return e});
-ITEMS.forEach(([, ,k],i)=>orbitEls[i].querySelector('.k').textContent=k);
-function fillOrbit(){ITEMS.forEach(([, , ,v,s,bar],i)=>{const e=orbitEls[i];e.querySelector('.v').textContent=v();e.querySelector('.s').textContent=s();
-  const b=bar&&bar();if(bar)e.style.setProperty('--p',((b||0)*100).toFixed(1)+'%');
-  e.querySelector('.v').classList.toggle('hot',i===1&&S.cpu>80||i===3&&S.gpu&&S.gpu.busy>80||b>.8)})}
-function placeOrbit(t){const W=innerWidth,H=innerHeight,narrow=W<760;
-  if(narrow){const col={left:0,right:0};ITEMS.forEach(([side],i)=>{if(side.startsWith('foot'))return;const e=orbitEls[i],k=col[side]++;
-      e.style.transform=`translate(${side==='left'?16:W/2+8}px,${hole.Y+hole.R*2.2+k*46}px)`;e.style.opacity=1});return}
-  const rx=Math.min(W*.37,hole.R*5.6),ry=Math.min(H*.33,hole.R*3.4);
-  ITEMS.forEach(([side,deg],i)=>{if(side.startsWith('foot'))return;const e=orbitEls[i];
-    const a=(deg+(reduce.matches?0:Math.sin(t*.06+i*1.7)*2.2))*Math.PI/180;
-    let x=hole.X+Math.cos(a)*rx,y=hole.Y+Math.sin(a)*ry;const w=e.offsetWidth,h=e.offsetHeight;
-    x=side==='left'?x-w:x;x=Math.max(16,Math.min(W-16-w,x));
-    e.style.transform=`translate(${x}px,${y-h/2}px)`;e.style.opacity=(.45+.55*(.55+.45*Math.cos(a*2))).toFixed(2)})}
+const orbitEls=ITEMS.map(([g,k,,,bar])=>{const e=el('div','m'+(k==='rede'?' wide':''));e.append(el('div','k',k),el('div','v'),el('div','s'));
+  if(bar){e.append(el('div','bar'));e.setAttribute('role','meter');e.setAttribute('aria-label',k);e.setAttribute('aria-valuemin','0');e.setAttribute('aria-valuemax','100')}
+  else{e.setAttribute('role','group');e.setAttribute('aria-label',k)}
+  $(g).append(e);return e});
+function fillOrbit(){ITEMS.forEach(([,k,v,sub,bar],i)=>{const e=orbitEls[i],vv=v(),ss=sub(),b=bar&&bar();
+  e.querySelector('.v').textContent=vv;e.querySelector('.s').textContent=ss;e.title=ss?`${k}: ${vv} · ${ss}`:`${k}: ${vv}`;
+  if(bar){e.style.setProperty('--p',Math.max(0,Math.min(1,b||0)).toFixed(3));e.setAttribute('aria-valuenow',Math.round((b||0)*100));e.setAttribute('aria-valuetext',ss?`${vv}, ${ss}`:vv)}
+  e.querySelector('.v').classList.toggle('hot',b>.85)})}
 async function refreshSystem(){try{S=await api('/api/system')}catch{}fillOrbit()}
-async function refreshVault(){try{V=await api('/api/vault')}catch{}fillOrbit()}
-refreshSystem();refreshVault();setInterval(refreshSystem,2000);setInterval(refreshVault,60000);
+refreshSystem();setInterval(refreshSystem,2000);
 const ear=action=>api('/api/ear',{action}).catch(e=>say(errMsg(e)));
 // tells the ear whether this window is in front (push-to-talk; the server currently only acknowledges focus/blur)
 const focusEar=()=>api('/api/ear',{action:document.hasFocus()?'focus':'blur'}).catch(()=>{});
@@ -323,26 +555,27 @@ function showStatus(){api('/api/status').then(s=>{
   $('status').textContent=`${brain} · ${voice}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e))}
 showStatus();
 // Piper speaks on the server, straight to the speakers: works with the window closed, no browser voices needed
-const speak=text=>{if(text)api('/api/speak',{text}).catch(e=>say(errMsg(e)))};
+const speak=text=>{if(text)brain.pulse('falar',Math.min(15,1+text.length*.06),'voz');if(text)api('/api/speak',{text}).catch(e=>say(errMsg(e)))};
 
 // ================= voice: the server listens on demand (push-to-talk + whisper), the page only shows it =================
 let vs='idle',busy=false,level=0;
 const STATES={idle:'Toque ou Ctrl+Alt+Espaço',listen:'Ouvindo',think:'Pensando',dict:'Ditando',mute:'Microfone desligado'};
-function setV(s){vs=s;document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
+function setV(s){vs=s;brain.voice=s;brain.think=s==='think';document.body.dataset.v=s;$('state-t').textContent=STATES[s];$('n-state').textContent=s==='idle'?'Pronto':STATES[s];
   hole.goal=mini.goal=chole.goal={idle:.12,listen:.5,think:.3,dict:.5,mute:.03}[s];hole.spin=mini.spin=chole.spin=s==='think'?2.2:1;
   $('mute').setAttribute('aria-pressed',s==='mute');$('mute').textContent=s==='mute'?'mic desligado':'mic ligado';
   const d=s==='dict';$('dictate').setAttribute('aria-pressed',d);$('dictate').textContent=d?'Parar':'Ditar'}
+// embaixo do cérebro só entram frases curtas (até 8 palavras); o resto já aparece na linha do tempo
+const ouvido=t=>{t=(t||'').trim();$('heard').textContent=t&&t.split(/\s+/).length<=8?t:''};
 const say=t=>{const r=$('reply');r.classList.remove('long');r.textContent=t};
 // resposta com parte falada + parte só para ler: o que vem depois de uma linha --- fica na tela e não é falado
 const SPLIT=/\n\s*-{3,}\s*\n/;
 const falada=t=>t.split(SPLIT)[0].trim();
-function showLong(t){const r=$('reply');r.classList.add('long');r.innerHTML=md(t.replace(SPLIT,'\n\n'));r.scrollTop=0}
 function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
   es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data)}catch{return}
-    if(ev.t==='level'){level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=chole.goal=Math.min(1,.3+ev.v*2.5)}
+    if(ev.t==='level'){level=ev.v;brain.level=ev.v;if(vs==='listen'||vs==='dict')hole.goal=mini.goal=chole.goal=Math.min(1,.3+ev.v*2.5)}
     else if(ev.t==='state'){if(!busy||ev.v!=='idle')setV(ev.v)}
     else if(ev.t==='wake'){$('heard').textContent='';say('');setV('listen')}
-    else if(ev.t==='command'){if(busy)return aviso('Espere a resposta (ou Esc).');if(!ev.text){say('Não entendi. Toque no buraco negro e fale de novo.');return}$('heard').textContent=ev.text;run(ev.text)}
+    else if(ev.t==='command'){if(busy)return aviso('Espere a resposta (ou Esc).');if(!ev.text){say('Não entendi. Toque no buraco negro e fale de novo.');return}ouvido(ev.text);run(ev.text)}
     else if(ev.t==='aviso')aviso(ev.message)
     else if(ev.t==='dictation')insertDictation(ev.text)
     else if(ev.t==='error'){say(ev.message);hint(ev.message)}};
@@ -369,20 +602,21 @@ async function command(raw){
   if(/^(desfaz)/.test(t)&&!$('undo').disabled)return $('undo').click();
   await askClaude(text)}
 async function askClaude(text){
-  setV('think');let out='',tl=null;const th=$('tlhome');th.replaceChildren();if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
+  // a resposta aparece só na linha do tempo (à direita); embaixo do cérebro ficam apenas os avisos curtos do say()
+  setV('think');let out='';const tt=tlTurn(text,'voz'),full=()=>out.replace(SPLIT,'\n\n').trim();say('');
+  if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
   try{await streamRun({message:text},ev=>{
-        if(ev.t==='delta'){out+=ev.text;say(falada(out))}
-        else if(ev.t==='error'){say(ev.message)}
+        if(ev.t==='delta'){out+=ev.text;tt.ai(full())}
+        else if(ev.t==='error'){tt.ai(ev.message)}
+        else if(ev.t==='note')brain.pulse('reflexos',1.6,'atalho rápido')
         else if(ev.t==='tool'&&ev.phase==='use'){
-          if(ev.agent&&!tl){tl=timeline();th.append(tl.box)}   // a linha do tempo só aparece quando há delegação
-          if(tl)tl.start(ev);
+          brain.use(ev);tt.tool(ev);
           $('state-t').textContent=ev.agent?'Delegando para '+ev.agent:'Usando '+ev.name}
-        else if(ev.t==='tool'&&ev.phase==='result'){if(tl)tl.end(ev)}});
-    if(tl)tl.finish(true);
-    if(parado)return say((out?falada(out)+' ':'')+'(Interrompido.)');
-    if(SPLIT.test(out))showLong(out);
+        else if(ev.t==='tool'&&ev.phase==='result')brain.end(ev)});
+    tt.done(true);
+    if(parado){tt.ai((out?full()+' ':'')+'(Interrompido.)');return}
     if(!$('notes').hidden)hint(falada(out));speak(falada(out))}
-  catch(e){if(tl)tl.finish(false);say(errMsg(e))}finally{setV('idle')}}
+  catch(e){tt.ai(errMsg(e));tt.done(false)}finally{brain.clear();setV('idle')}}
 // /api/run answers in NDJSON lines (delta, tool, usage, complete, error); shared by voice and chat
 async function streamRun(body,on){
   const r=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json','X-Jarvis-Token':TOKEN},body:JSON.stringify(body)});
@@ -393,12 +627,15 @@ async function streamRun(body,on){
       let ev;try{ev=JSON.parse(line)}catch{continue}on(ev)}}}
 const tap=()=>{if(vs==='listen'||vs==='dict')ear('stop');else if(vs==='idle')ear('listen')};
 $('hole').addEventListener('click',tap);
+$('brain').addEventListener('click',()=>{if(!brain.moved)tap()});
+$('brain').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
+$('visual').onclick=()=>setVisual(visual==='brain'?'hole':'brain');
 $('hole').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tap()}});
 addEventListener('keydown',e=>{if(e.key===' '&&!$('home').hidden&&!/INPUT|TEXTAREA|BUTTON|A/.test(document.activeElement.tagName)){e.preventDefault();tap()}});
-$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v)return;if(busy)return aviso('Espere a resposta (ou Esc).');$('cmd').value='';$('heard').textContent=v;run(v)});
+$('typed').addEventListener('submit',e=>{e.preventDefault();const v=$('cmd').value.trim();if(!v)return;if(busy)return aviso('Espere a resposta (ou Esc).');$('cmd').value='';ouvido(v);run(v)});
 $('mute').onclick=()=>ear(vs==='mute'?'on':'off');
 ['notas diárias','abrir o chat','como está o sistema?','o que tenho pra hoje?'].forEach(c=>{const b=el('button','cmd',`“${c}”`);b.type='button';
-  b.onclick=()=>{$('heard').textContent=c;run(c)};$('cmds').append(b)});
+  b.onclick=()=>{ouvido(c);run(c)};$('cmds').append(b)});
 
 // ================= daily notes =================
 let list=[],note=null,saved='',prevText=null,dictRange=null;
@@ -471,17 +708,17 @@ function timeline(){const box=el('div','tl'),t0=performance.now(),rows={};
     finish(ok){box.querySelectorAll('.run').forEach(r=>close(r,ok));add(ok?'Resposta pronta':'Interrompido','ok')}}}
 async function chatSend(text){
   text=(text||'').trim();if(!text)return;if(busy)return cstate('Espere a resposta atual (ou Esc para interromper).');
-  busy=true;setV('think');clog.append(el('div','me',text));
+  busy=true;setV('think');clog.append(el('div','me',text));const tt=tlTurn(text,'chat');
   const ai=el('div','ai');let out='',tl=null,failed=false;const scroll=()=>clog.scrollTop=clog.scrollHeight;clog.append(ai);scroll();cstate('Pensando…');
   try{await streamRun({message:text,canal:'chat'},ev=>{
-      if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);scroll()}
-      else if(ev.t==='tool'&&ev.phase==='use'){if(!tl){tl=timeline();ai.before(tl.box)}const ag=tl.start(ev);cstate(ag?'Delegando para '+ev.agent+'…':'Usando '+ev.name+'…');scroll()}
-      else if(ev.t==='tool'&&ev.phase==='result'){if(tl)tl.end(ev)}
+      if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);tt.ai(plain(out));scroll()}
+      else if(ev.t==='tool'&&ev.phase==='use'){brain.use(ev);tt.tool(ev);if(!tl){tl=timeline();ai.before(tl.box)}const ag=tl.start(ev);cstate(ag?'Delegando para '+ev.agent+'…':'Usando '+ev.name+'…');scroll()}
+      else if(ev.t==='tool'&&ev.phase==='result'){brain.end(ev);if(tl)tl.end(ev)}
       else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out);failed=true}});
-    if(tl)tl.finish(!failed);ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
+    if(tl)tl.finish(!failed);tt.done(!failed);ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
     await refreshSystem();const l=S.claude&&S.claude.last;cstate(l?`${num.format(l.total)} tokens nesta resposta`:'')}
-  catch(e){if(tl)tl.finish(false);ai.textContent=errMsg(e);cstate('')}
-  finally{busy=false;setV('idle');saveLog();scroll()}}
+  catch(e){if(tl)tl.finish(false);ai.textContent=errMsg(e);tt.ai(errMsg(e));tt.done(false);cstate('')}
+  finally{busy=false;brain.clear();setV('idle');saveLog();scroll()}}
 clog.addEventListener('click',e=>{if(e.target.classList.contains('ouvir')){const ai=e.target.previousElementSibling;speak(plain(ai.dataset.raw||ai.textContent))}});
 const sendTyped=()=>{const v=cin.value;if(!v.trim()||busy)return;cin.value='';cin.style.height='';chatSend(v)};
 $('cform').addEventListener('submit',e=>{e.preventDefault();sendTyped()});
@@ -500,14 +737,15 @@ async function route(){const page=location.hash==='#notas'?'notes':location.hash
   document.title={notes:'Fedora · Notas diárias',chat:'Fedora · Chat',home:'Fedora'}[page];
   if(page==='notes'){mini.resize();try{await loadList();if(!note)await openNote(list.find(n=>n.today).id)}catch(e){hint(errMsg(e))}ta.focus()}
   else if(page==='chat'){chole.resize();clog.scrollTop=clog.scrollHeight;cin.focus()}
-  else{hole.resize();stars($('sky'))}}
+  else{head().resize();stars($('sky'))}}
 addEventListener('hashchange',route);
-addEventListener('resize',()=>{hole.resize();mini.resize();chole.resize();stars($('sky'))});
+addEventListener('resize',()=>{head().resize();mini.resize();chole.resize();stars($('sky'))});
 let last=performance.now();
 function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;
-  if(!$('home').hidden){hole.frame(dt);placeOrbit(now/1000)}else if(!$('chat').hidden)chole.frame(dt);else mini.frame(dt);requestAnimationFrame(loop)}
-setV('idle');fillOrbit();route();requestAnimationFrame(loop);
-document.fonts&&document.fonts.ready.then(()=>placeOrbit(performance.now()/1000));
+  try{if(!$('home').hidden){head().frame(dt)}else if(!$('chat').hidden)chole.frame(dt);else mini.frame(dt)}
+  catch(e){if(!loop.err){loop.err=1;console.error('frame:',e)}}   // one bad frame must not freeze the animation for good
+  requestAnimationFrame(loop)}
+setVisual(visual,false);setV('idle');fillOrbit();route();requestAnimationFrame(loop);
 </script>
 </body>
 </html>

@@ -8,6 +8,7 @@ $env:PYTHONUTF8 = "1"
 $testes = @(
     @("conversa", @("conversa.py")),
     @("runtime", @("runtime.py")),
+    @("motor_agy", @("motor_agy.py")),
     @("listener", @("listener.py")),
     @("vad", @("vad.py")),
     @("llm", @("llm.py", "--teste")),

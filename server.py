@@ -242,7 +242,7 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/status":
             g = memory.build_graph()
             return self._json(dict(
-                runtime=runtime.runtime_kind(), version=runtime.version(),
+                runtime=runtime.runtime_kind(), version=runtime.version(), motor=runtime.motor_atual(),
                 model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
                 workdir=runtime.WORKDIR, vault=g["vault"], notes=g["total"],
                 links=len(g["links"]), session=SESSION["id"],
@@ -450,7 +450,9 @@ class Handler(BaseHTTPRequestHandler):
             reg["sessao_nova"] = CHAT["id"] is None
             return self._chat(message, emit, turno)
         full = conversa.completo(message)
-        if not conversa.continua(SESSION, full):
+        motor = runtime.motor_atual()
+        modo_sessao = (full, motor)   # um id de sessao do Claude nao serve no agy (e vice-versa): trocar de motor abre sessao nova
+        if not conversa.continua(SESSION, modo_sessao):
             SESSION.update(id=None, turnos=0)
         reg.update(modo={False: "leve", "equipe": "equipe", True: "completo"}.get(full, str(full)),
                    sessao_nova=SESSION["id"] is None)
@@ -462,11 +464,11 @@ class Handler(BaseHTTPRequestHandler):
         if hit:
             emit(dict(t="focus", id=hit))
         reply = []
-        for ev in runtime.run(prompt, SESSION["id"], commands.system_block(equipe=(full == "equipe")), full):
+        for ev in runtime.run(prompt, SESSION["id"], commands.system_block(equipe=(full == "equipe")), full, motor):
             if ev.get("t") == "delta":
                 reply.append(ev.get("text", ""))
             if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
-                if _guarda_sessao(turno, SESSION, id=ev["session_id"], modo=full, ultima=time.time(), turnos=SESSION["turnos"] + 1):
+                if _guarda_sessao(turno, SESSION, id=ev["session_id"], modo=modo_sessao, ultima=time.time(), turnos=SESSION["turnos"] + 1):
                     conversa.lembrar(message, "".join(reply))
             if ev.get("t") == "error":
                 SESSION["id"] = None
@@ -474,9 +476,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _chat(self, message, emit, turno):
         prompt = commands.turn_block(message) + "\n\n## Pedido\n" + message
-        for ev in runtime.run(prompt, CHAT["id"], commands.system_block(chat=True), True):
+        motor = runtime.motor_atual()
+        if CHAT.get("motor") not in (None, motor):   # outro motor nao retoma a sessao do primeiro
+            CHAT["id"] = None
+        for ev in runtime.run(prompt, CHAT["id"], commands.system_block(chat=True), True, motor):
             if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
-                _guarda_sessao(turno, CHAT, id=ev["session_id"])
+                _guarda_sessao(turno, CHAT, id=ev["session_id"], motor=motor)
             emit(ev)   # an error keeps the session: the chat history is worth more than a retry from scratch
 
 
