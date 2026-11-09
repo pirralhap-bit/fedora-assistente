@@ -101,6 +101,8 @@ LIGHT = ["--disable-slash-commands",
 LIGHT_EQUIPE = [LIGHT[0], LIGHT[1], LIGHT[2] + ",Agent"]   # + subagents (junior/senior/qa), only when asked for
 LIMITS = {}   # last seen plan usage: {"five_hour": {"used": .29, "resets": epoch}, ...}
 RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
+# Qual assinatura responde: claude (padrao) ou agy (Antigravity/Google, motor_agy.py, mesma autonomia, mesmas travas DENY).
+MOTOR = os.environ.get("FEDORA_MOTOR", "claude").strip().lower()
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
 RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "").strip()
 
@@ -500,7 +502,20 @@ def run_mock(message, session_id=None, system=None):
                                    f"Diagnostic: {detail[:200]}"))
 
 
-def run(message, session_id=None, system=None, full=True):
+def motor_atual(motor=None):
+    """Motor deste turno: 'claude' ou 'agy'. Qualquer outro valor cai no Claude (nunca num motor desconhecido)."""
+    motor = (motor or MOTOR or "claude").strip().lower()
+    return motor if motor in ("claude", "agy") else "claude"
+
+
+def run(message, session_id=None, system=None, full=True, motor=None):
+    if motor_atual(motor) == "agy":
+        try:
+            import motor_agy
+            yield from motor_agy.run(message, session_id, system, full)
+        except Exception as e:  # noqa: BLE001
+            yield dict(t="error", message=f"could not start agy core: {e}")
+        return
     if runtime_kind() != "claude":
         yield from run_mock(message, session_id, system)
         return
@@ -516,6 +531,8 @@ if __name__ == "__main__":
     e = tool_event(dict(id="t2", name="Read", input=dict(file_path="a.py")), parent="t1")
     assert "agent" not in e and e["parent"] == "t1" and e["input"] == "a.py", e
     assert tool_event(dict(name="Agent", input={}))["agent"] == "agente"
+    assert motor_atual("agy") == "agy" and motor_atual(" AGY ") == "agy" and motor_atual("claude") == "claude"
+    assert motor_atual("gpt") == "claude" and motor_atual("") == motor_atual(None)   # desconhecido cai no Claude, nunca num motor solto
     assert escalar_em("ESCALAR: mexe em DENY") and escalar_em([{"type": "text", "text": "Feito.\n  ESCALAR : precisa do senior"}])
     for falso in ("leia .claude/agents/junior.md (responda ESCALAR se não souber)", "grep ESCALAR docs/EQUIPE.md",
                   "docs/EQUIPE.md:11:Se um agente responder ESCALAR, repasse", [{"type": "text", "text": "sem ESCALAR aqui"}], None):
