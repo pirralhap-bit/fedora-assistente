@@ -25,7 +25,7 @@ Revisão manual: 2026-11-09
 - listener.py (ouvido, push-to-talk), vad.py, whisper_server.py (STT local), speech.py (voz Piper), orb.py (buraco negro flutuante), sysinfo.py (números da máquina).
 - memory.py: o vault Obsidian como grafo. notes.py: notas diárias. tidy.py: limpa texto ditado. llm.py: chamadas pequenas à API do Gemini.
 - turnolog.py: um registro por turno. retro.py: retrospectiva semanal no vault.
-- agentes.py + agentes/*.md: equipe (junior, flash, argon, senior, qa), independente do motor; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
+- agentes.py + agentes/*.md: equipe (junior, writer, design, arquiteto, senior, qa), independente do motor; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
 
 ## Como trabalhar sem gastar à toa
 - Abra só o arquivo do módulo citado no pedido. runtime.py e retro.py são grandes (700+ linhas): procure com grep e leia por trechos.
@@ -34,15 +34,15 @@ Revisão manual: 2026-11-09
 
 <!-- auto:inicio -->
 ## Mapa do Graphify (calculado em código)
-- Atenção: o mapa foi gerado no commit 3ca70225 e o projeto está em 913d54c; confira nos arquivos antes de confiar.
-Áreas principais: vad.py, time, Atalhos rápidos, tidy.py, notes.py, runtime.py, Ouvido (listener), Orbe flutuante, speech.py, listener.py, llm.py, retro.py, turnolog.py, EQUIPE.md, motor_agy.py, memory.py, conversa.py.
+- Atualizado: gerado no commit 5047d0bb.
+Áreas principais: vad.py, time, Atalhos rápidos, listener.py, notes.py, runtime.py, Ouvido (listener), Orbe flutuante, speech.py, whisper_server.py, llm.py, retro.py, dupla.py, EQUIPE.md, motor_agy.py, commands.py, agentes.py, compara_modelos.py, sys.
 Funções e classes mais ligadas (comece por elas):
+- `_teste_corpo()` - 21 edges
+- `executa()` - 21 edges
 - `fold()` - 20 edges
-- `_run_locked()` - 17 edges
-- `Ear` - 16 edges
-- `_rodar()` - 16 edges
-- `_teste()` - 15 edges
-- `Handler` - 15 edges
-- `_teste_lote_e_qa()` - 15 edges
-- `_teste()` - 14 edges
+- `_teste()` - 17 edges
+- `Ear` - 17 edges
+- `_rodar()` - 17 edges
+- `Handler` - 16 edges
+- `_teste_lote_e_qa()` - 16 edges
 <!-- auto:fim -->

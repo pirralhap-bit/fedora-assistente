@@ -16,9 +16,9 @@ JANELA = int(os.environ.get("FEDORA_JANELA", "900"))       # 0 = no limit (old b
 MAX_TURNOS = int(os.environ.get("FEDORA_MAX_TURNOS", "10"))
 LEVE = os.environ.get("FEDORA_MODO_LEVE", "1") != "0"      # 0 = always the full Claude Code
 KEEP = 5
-GATILHOS = ("a fundo", "modo analista", "modo completo")
+GATILHOS = ("a fundo", "modo analista", "modo completo", "modo b3", "day trade", "operar na b3", "boleta b3")
 # light tools + the Agent tool (+2.8k tokens, measured): only when the request is about delegating or reviewing
-GATILHOS_EQUIPE = ("equipe", "delegue", "delegar", "junior", "senior", "revisor", "peca ao qa", "mande o qa", "passe pro qa")
+GATILHOS_EQUIPE = ("equipe", "delegue", "delegar", "junior", "writer", "design", "arquiteto", "senior", "revisor", "peca ao qa", "mande o qa", "passe pro qa")
 
 
 def completo(message):

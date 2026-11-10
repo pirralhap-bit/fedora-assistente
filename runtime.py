@@ -595,8 +595,8 @@ if __name__ == "__main__":
     assert "agent" not in e and e["parent"] == "t1" and e["input"] == "a.py", e
     assert tool_event(dict(name="Agent", input={}))["agent"] == "agente"
     # delegation through the shell (any engine): agent and task show up in the timeline; "listar"/--teste/plain shell do not
-    e = tool_event(dict(id="s1", name="Bash", input=dict(command='"C:/Users/Pedro/p/.venv/Scripts/python.exe" "C:/Users/Pedro/p/agentes.py" flash "ajuste o README"')))
-    assert e["agent"] == "flash" and e["desc"] == "ajuste o README", e
+    e = tool_event(dict(id="s1", name="Bash", input=dict(command='"C:/Users/Pedro/p/.venv/Scripts/python.exe" "C:/Users/Pedro/p/agentes.py" writer "ajuste o README"')))
+    assert e["agent"] == "writer" and e["desc"] == "ajuste o README", e
     e = tool_event(dict(id="s2", name="run_command", input=dict(CommandLine="python agentes.py qa -")))
     assert e["agent"] == "qa", e
     for nao in ("python agentes.py listar", "python agentes.py --teste", "git status", "python agentes.py", "cat docs/agentes.py.md",
@@ -608,8 +608,8 @@ if __name__ == "__main__":
     for sim, esperado in (('"C:/Users/Pedro/p/.venv/Scripts/python.exe" "C:/Users/Pedro/p/agentes.py" qa "revise"', ("qa", "revise")),
                           (r'"C:\Users\Pedro\p\.venv\Scripts\python.exe" "C:\Users\Pedro\p\agentes.py" senior "x y"', ("senior", "x y")),
                           (r".venv\Scripts\python.exe agentes.py junior 'ajuste'", ("junior", "ajuste")),
-                          ("'/c/Program Files/Python/python.exe' '/c/My Docs/agentes.py' flash ajuste", ("flash", "ajuste")),
-                          ("py agentes.py argon -", ("argon", "-")), ("python ./agentes.py qa -", ("qa", "-")),
+                          ("'/c/Program Files/Python/python.exe' '/c/My Docs/agentes.py' writer ajuste", ("writer", "ajuste")),
+                          ("py agentes.py arquiteto -", ("arquiteto", "-")), ("python ./agentes.py qa -", ("qa", "-")),
                           ("Python.EXE agentes.py qa", ("qa", "")), ("  python agentes.py qa  x\n", ("qa", "x"))):
         assert delegacao_em(sim) == esperado, (sim, delegacao_em(sim))
     assert motor_atual("agy") == "agy" and motor_atual(" AGY ") == "agy" and motor_atual("claude") == "claude"

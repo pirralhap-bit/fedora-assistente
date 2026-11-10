@@ -42,8 +42,8 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 - **Esc** cancela o turno em andamento (voz ou chat): o servidor mata o Claude e descarta a sessão daquele canal.
 - **`#notas`** (na URL da janela): página de notas diárias. Voz lá: "ditar", "organizar", "salvar", "voltar", "desfazer". O resto vai para o Claude.
 - **`#chat`**: conversa digitada, estilo Claude Code (Enter envia, Shift+Enter quebra linha).
-- **Modo leve (padrão)**: poucas ferramentas, contexto pequeno. "A fundo", "modo analista" ou "modo completo" no pedido liga o Claude Code completo (skills, PowerShell etc.). `FEDORA_MODO_LEVE=0` deixa sempre completo.
-- **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha a ferramenta Agent e o mapa de `docs/EQUIPE.md` (subagentes em `.claude/agents/`: junior, senior, qa). Custa cerca de 2,8 mil tokens a mais por turno.
+- **Modo leve (padrão)**: poucas ferramentas, contexto pequeno. "A fundo", "modo analista", "modo completo" ou os gatilhos de B3 ("modo b3", "day trade", "operar na b3", "boleta b3") no pedido ligam o Claude Code completo (skills, PowerShell etc.). `FEDORA_MODO_LEVE=0` deixa sempre completo.
+- **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha a ferramenta Agent e o mapa de `docs/EQUIPE.md` (subagentes em `agentes/`: writer, junior, design, arquiteto, senior, qa; chamados por `agentes.py`; "writer", "design" e "arquiteto" também são gatilhos). Só na voz: o `#chat` roda sempre em modo completo e não passa por comandos nem atalhos. Custa cerca de 2,8 mil tokens a mais por turno.
 - **Resposta longa**: o que vem depois de uma linha `---` fica só na tela; só a parte antes dela é falada.
 - **Motor Google (agy)**: com o Claude acima de 55% na semana ou em 90% na sessão de 5 h, o Antigravity assume (detalhes em `docs/MOTORES.md`); a tela mostra "Google (Antigravity) conectado, motor principal" e "Claude em pausa até <reset>", e um agente sem o agy instalado falha com erro em vez de usar o Claude.
 - **Linha do tempo de agentes**: quando há delegação, a interface mostra quem recebeu o pedido, quais subagentes foram acionados e o que cada um usou.
@@ -53,6 +53,11 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 
 | Arquivo | O que faz |
 |---|---|
+| `motor_regra.py` | qual motor responde o turno (Claude, ou agy acima de 55% na semana / 90% na sessão de 5 h); estado em `motor.json` |
+| `motor_agy.py` | motor Google (Antigravity, `agy`): mesmo contrato do `runtime.py`, `DENY` traduzida para `permissions.deny` |
+| `agentes.py` + `agentes/*.md` | equipe de subagentes independente do motor (writer, junior, design, arquiteto, senior, qa), cada um com o seu pacote de skills |
+| `dupla.py` | terminal único (`dupla`) com as duas assinaturas, mesma regra e mesmas travas |
+| `contexto.py` + `docs/CONTEXTO-AGY.md` | cache manual de contexto: abre a primeira mensagem de cada sessão nova do agy |
 | `server.py` | servidor HTTP local (`/api/*` e a UI); só aceita `localhost`, exige token nos POST; decide a rota do turno, grava o registro e sobe o resto |
 | `runtime.py` | chama `claude -p` em stream; `DENY` e regras de segredo; modos leve/equipe/completo |
 | `commands.py` | `/comandos`, regras do PC (`PC_RULES`), bloco de sistema do prompt, lê `docs/EQUIPE.md` no modo equipe |
@@ -72,13 +77,15 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 | `retro.py` | nota semanal de retrospectiva no vault |
 | `ui/index.html` | a interface inteira (buraco negro, `#notas`, `#chat`) |
 | `iniciar.ps1` | sobe servidor + STT |
-| `tools/` | `testa.ps1` (autotestes offline), `compara-voz.py` (compara modelos de voz em clipes salvos) |
+| `tools/` | `testa.ps1` (autotestes offline), `compara-voz.py` e `compara_modelos.py` (comparam modelos de voz) |
+| `docs/` | `MOTORES.md` (motores, agentes, `dupla`), `EQUIPE.md` (mapa do modo equipe), `CONTEXTO-AGY.md` (cache do agy), `DUPLA-COORDENACAO.md` (quadro Claude ⇄ agy) |
 
 STT em CPU: configurado com o modelo `medium` para maior capacidade, compreensão e robustez de vocabulário na transcrição local.
 
 ## Segurança
 
 - A Fedora roda o Claude com `bypassPermissions` (`JARVIS_PERMISSION`): ele age sem pedir confirmação, guiado pelo que ouviu. Um `claude -p` sem tela não consegue mostrar prompt de permissão; qualquer modo mais estrito bloqueia as ferramentas em silêncio (`acceptEdits` limita a edições).
+- O motor Google (`agy`) também roda em bypass (`--dangerously-skip-permissions`); a mesma `DENY` é traduzida a cada turno para `permissions.deny` e, se a tradução sair incompleta, o motor não inicia (`docs/MOTORES.md`).
 - A lista `DENY` em `runtime.py` é um **freio contra frase mal ouvida, não um sandbox**. Ela veta desligar/reiniciar/suspender o PC, apagar de vez (`rm`, `del`, `Remove-Item`, `rmdir`, `format`, `diskpart`, `reg delete`, `os.remove`, `shutil.rmtree`, `git clean`, `robocopy /mir`...), `-EncodedCommand` e matar processos críticos, nas ferramentas Bash e PowerShell. Mover para a Lixeira continua permitido (`PC_RULES` em `commands.py`).
 - O que o `DENY` **não** cobre (aceito): maiúsculas e minúsculas misturadas no Bash, ofuscação (concatenação de strings, base64 fora de `-EncodedCommand`, escapes `^` do cmd), `DeleteFile` com um só argumento (apaga de vez por padrão) e `taskkill`/`Stop-Process` por PID em processos críticos. Palavra perigosa dentro de URL ou texto de busca num comando Bash também é negada (falso positivo de propósito).
 - Leitura de `.env` e `*.token` é negada (regras `Read(...)` e globs de comando), inclusive o token do servidor em `%LOCALAPPDATA%\fedora-assistente`.

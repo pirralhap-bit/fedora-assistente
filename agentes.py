@@ -17,7 +17,7 @@ Seguranca: nenhum agente roda com permissao total. Cada um recebe so as ferramen
 curta de comandos do catalogo COMANDOS) e a lista runtime.DENY (no agy, traduzida por motor_agy.regras_deny()) vale por cima.
 Comando liberado e estreito nos dois backends: python so roda um dos AUTOTESTES (lista fechada = tools/testa.ps1), exato,
 git so status/diff/log/show sem --output, --ext-diff, --textconv, --no-index, -c, --exec-path; nenhum comando aceita aspas,
-barra invertida, $, { } nem ` (o bash juntaria `--o""utput`); ninguem redireciona saida (> <) nem usa * ? [ ] ( ) ! &. O estreito ISOLA quem nao edita (qa, argon); para quem edita (senior, flash,
+barra invertida, $, { } nem ` (o bash juntaria `--o""utput`); ninguem redireciona saida (> <) nem usa * ? [ ] ( ) ! &. O estreito ISOLA quem nao edita (qa, arquiteto); para quem edita (senior, design, writer,
 junior) a DENY e so um freio, nao um sandbox (o senior edita codigo e roda autotestes que o usam; pode mexer ate em .git/config). Agente nao chama agente (FEDORA_AGENTE no ambiente trava a recursao). Falha vira `ESCALAR: ...`.
 """
 import json
@@ -416,9 +416,11 @@ def _teste_corpo():
 
     # definicoes: todas carregam, modelos existem, EQUIPE.md cita cada uma com o modelo certo
     ags = {a["nome"]: a for a in todos()}
-    assert set(ags) >= {"junior", "senior", "qa", "flash", "argon"}, ags.keys()
+    assert set(ags) >= {"junior", "writer", "design", "arquiteto", "senior", "qa"}, ags.keys()
     assert ags["qa"]["modelo"] == "opus" and not ags["qa"]["edita"] and ags["senior"]["modelo"] == "opus"
-    assert ags["flash"]["modelo"] == "gemini-flash" and ags["argon"]["modelo"] == "gemini-argon" and not ags["argon"]["edita"]
+    assert ags["writer"]["modelo"] == "gemini-flash" and ags["junior"]["modelo"] == "gemini-flash"
+    assert ags["design"]["modelo"] == "sonnet" and ags["design"]["edita"]
+    assert ags["arquiteto"]["modelo"] == "gemini-argon" and not ags["arquiteto"]["edita"]
     equipe = (RAIZ / "docs" / "EQUIPE.md").read_text(encoding="utf-8")
     for a in ags.values():
         assert f"`{a['nome']}`" in equipe, f"EQUIPE.md nao cita {a['nome']}"
@@ -459,12 +461,12 @@ def _teste_corpo():
 
     # roteamento
     runtime.MOTOR = "auto"   # o teste nao depende do FEDORA_MOTOR de quem roda
-    assert rota(ags["junior"], "claude")[:2] == ("claude", "haiku")    # Haiku so existe no Claude
-    assert rota(ags["junior"], "agy")[:2] == ("agy", "gemini-3.8-flash-low")   # ...mas com o agy no comando nada roda no Claude
-    assert rota(ags["flash"], "claude")[0] == "agy"           # Gemini so existe no Google, mesmo com o turno no Claude
+    assert rota(ags["design"], "claude")[:2] == ("claude", "sonnet")    # Sonnet so existe no Claude
+    assert rota(ags["design"], "agy")[:2] == ("agy", "gemini-3.8-flash-high")   # ...mas com o agy no comando nada roda no Claude
+    assert rota(ags["writer"], "claude")[0] == "agy" and rota(ags["junior"], "claude")[0] == "agy"   # Gemini so existe no Google, mesmo com o turno no Claude
     for nome_ in ags:                                         # regra de troca: turno no agy => nenhum agente toca o Claude
         assert rota(ags[nome_], "agy")[0] == "agy", nome_
-    assert rota(ags["argon"])[1] == "gemini-4-argon-medium"
+    assert rota(ags["arquiteto"])[1] == "gemini-4-argon-medium"
     assert rota(ags["qa"], "claude")[:2] == ("claude", "opus") and rota(ags["qa"], "agy")[:2] == ("agy", "gemini-4-argon-high")
     os.environ["FEDORA_MOTOR_TURNO"] = "agy"
     assert rota(ags["senior"])[0] == "agy"                    # turno no agy pelo ambiente: Opus vira Argon
@@ -633,8 +635,8 @@ def _teste_corpo():
     for barrado in ('python -c "import os; os.environ.pop(\'FEDORA_AGENTE\')"', "python -m x", "git diff --output=x", "git show HEAD"):
         assert not claude_ok(sr, barrado) and not agy_ok(sr, barrado), ("senior", barrado)   # senior: mesmas regras (sem git show)
     assert claude_ok(sr, "python runtime.py") and agy_ok(sr, "git log -3")
-    assert len(cfg["deny"]) >= 50 and not json.loads(pathlib.Path(settings_agy(ags["argon"], tmp / "s_ar.json")).read_text(encoding="utf-8"))["permissions"]["allow"]
-    assert regras_agy(ags["argon"]) == ([], ["write_file(*)"]) and regras_claude(ags["junior"]) == ([], [])   # argon: sem comando, mas so le
+    assert len(cfg["deny"]) >= 50 and not json.loads(pathlib.Path(settings_agy(ags["arquiteto"], tmp / "s_ar.json")).read_text(encoding="utf-8"))["permissions"]["allow"]
+    assert regras_agy(ags["arquiteto"]) == ([], ["write_file(*)"]) and regras_claude(ags["junior"]) == ([], [])   # arquiteto: sem comando, mas so le
 
     # cabecalho `comandos:` fora do catalogo: o agente nao carrega
     pasta_real = PASTA
@@ -665,57 +667,57 @@ def _teste_corpo():
     assert len(subprocess.list2cmdline(monta_agy(ags["senior"], "x" * MAX_TAREFA, "gemini-4-argon-high", sj))) < 30000   # tarefa maxima no agy cabe
     a = monta_agy(ags["qa"], "revise", "gemini-4-argon-high", sj)
     assert "--disable-slash-commands" not in a, "qa no agy: com a flag o --mode plan nao vale (medido) e o agente grava arquivo"
-    assert "--disable-slash-commands" not in monta_agy(ags["argon"], "x", "gemini-4-argon-medium", sj)
-    assert "--disable-slash-commands" in monta_agy(ags["flash"], "x", "gemini-3.8-flash-low", sj)   # quem edita mantem (accept-edits)
-    for nome_, quer in (("qa", True), ("argon", True), ("flash", False), ("senior", False), ("junior", False)):
+    assert "--disable-slash-commands" not in monta_agy(ags["arquiteto"], "x", "gemini-4-argon-medium", sj)
+    assert "--disable-slash-commands" in monta_agy(ags["writer"], "x", "gemini-3.8-flash-low", sj)   # quem edita mantem (accept-edits)
+    for nome_, quer in (("qa", True), ("arquiteto", True), ("writer", False), ("design", False), ("senior", False), ("junior", False)):
         deny_ = json.loads(pathlib.Path(settings_agy(ags[nome_], tmp / f"s_{nome_}.json")).read_text(encoding="utf-8"))["permissions"]["deny"]
         assert ("write_file(*)" in deny_) == quer, (nome_, quer)   # so quem nao edita ganha o deny de escrita
-    aviso_qa, aviso_ar = aviso_headless_agy(ags["qa"]), aviso_headless_agy(ags["argon"])
+    aviso_qa, aviso_ar = aviso_headless_agy(ags["qa"]), aviso_headless_agy(ags["arquiteto"])
     assert "ENCERRA" in aviso_qa and "git diff" in aviso_qa and "runtime.py" in aviso_qa and "llm.py --teste" in aviso_qa, aviso_qa
     assert "nenhum comando de shell" in aviso_ar and aviso_qa in a[a.index("-p") + 1]
     assert a[a.index("--mode") + 1] == "plan" and a[a.index("--model") + 1] == "gemini-4-argon-high" and "--dangerously-skip-permissions" not in a
-    assert monta_agy(ags["flash"], "ajuste", "gemini-3.8-flash-low", sj)[monta_agy(ags["flash"], "x", "m", sj).index("--mode") + 1] == "accept-edits"
+    assert monta_agy(ags["writer"], "ajuste", "gemini-3.8-flash-low", sj)[monta_agy(ags["writer"], "x", "m", sj).index("--mode") + 1] == "accept-edits"
 
     # execucao com os fakes
-    r = executa(ags["junior"], "ajuste", "claude")
+    r = executa(ags["design"], "ajuste", "claude")
     assert r["ok"] and r["texto"] == "feito pelo claude" and r["assinatura"] == "claude" and r["tokens_in"] == 60 and r["tokens_out"] == 3, r
-    assert json.loads(grava.read_text(encoding="utf-8"))["agente"] == "junior"       # FEDORA_AGENTE chega no filho (trava a recursao)
+    assert json.loads(grava.read_text(encoding="utf-8"))["agente"] == "design"       # FEDORA_AGENTE chega no filho (trava a recursao)
     os.environ["FAKE_TIPO"] = "agy"
-    r = executa(ags["flash"], "ajuste", "claude")
+    r = executa(ags["writer"], "ajuste", "claude")
     assert r["ok"] and r["texto"] == "feito pelo agy" and r["assinatura"] == "agy" and r["tokens_in"] == 100, r
     r = executa(ags["qa"], "revise", "agy")
     assert r["ok"] and r["assinatura"] == "agy" and r["modelo"] == "gemini-4-argon-high", r
     for modo, esperado in (("erro", "SUCCESS"), ("sai1", "boom")):
         os.environ["FAKE_MODO"] = modo
-        r = executa(ags["flash"], "x", "agy")
+        r = executa(ags["writer"], "x", "agy")
         assert not r["ok"] and r["erro"], (modo, r)
     os.environ["FAKE_TIPO"] = "claude"
     os.environ["FAKE_MODO"] = "erro"
-    r = executa(ags["junior"], "x")
+    r = executa(ags["design"], "x")
     assert not r["ok"] and "falhou" in r["erro"], r
     os.environ["FAKE_MODO"] = "dorme"
     t0 = time.monotonic()
-    r = executa(ags["junior"], "x", timeout=2)
+    r = executa(ags["design"], "x", timeout=2)
     assert not r["ok"] and "sem resposta" in r["erro"] and time.monotonic() - t0 < 20, r
     os.environ["FAKE_MODO"] = "ok"
-    r = executa(ags["junior"], "x" * (MAX_TAREFA + 1))
+    r = executa(ags["design"], "x" * (MAX_TAREFA + 1))
     assert not r["ok"] and "grande demais" in r["erro"], r
     # dentro do MAX_TAREFA, mas a linha estoura depois do escape do Windows (cada " vira \"): recusa antes de lancar o agy
-    r = executa(ags["flash"], '"' * 15000, "agy")
+    r = executa(ags["writer"], '"' * 15000, "agy")
     assert not r["ok"] and "grande demais" in r["erro"] and "linha de comando" in r["erro"], r
     # agy/claude que resolve para .cmd/.bat: recusa (o cmd.exe reinterpretaria & e " da tarefa)
     cmd_falso = tmp / "agy.cmd"
     cmd_falso.write_text("@echo off\n", encoding="utf-8")
     agy_antes = os.environ["AGY_CMD"]
     os.environ["AGY_CMD"] = str(cmd_falso).replace("\\", "/")
-    r = executa(ags["flash"], "ajuste & del x", "agy")
+    r = executa(ags["writer"], "ajuste & del x", "agy")
     assert not r["ok"] and ".cmd" in r["erro"], r
     os.environ["CLAUDE_CMD"], claude_antes = os.environ["AGY_CMD"], os.environ["CLAUDE_CMD"]
-    r = executa(ags["junior"], "ajuste", "claude")
+    r = executa(ags["design"], "ajuste", "claude")
     assert not r["ok"] and ".cmd" in r["erro"], r
     os.environ["AGY_CMD"], os.environ["CLAUDE_CMD"] = agy_antes, claude_antes
     linhas = [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()]
-    assert len(linhas) >= 7 and {x["agente"] for x in linhas} >= {"junior", "flash", "qa"} and all("ts" in x and "ok" in x for x in linhas), linhas
+    assert len(linhas) >= 7 and {x["agente"] for x in linhas} >= {"design", "writer", "qa"} and all("ts" in x and "ok" in x for x in linhas), linhas
 
     # recursao: dentro de um agente nao chama outro; CLI ruim e tratada
     os.environ["FEDORA_AGENTE"] = "senior"
@@ -728,7 +730,7 @@ def _teste_corpo():
     bloco = commands.system_block(equipe=True)
     assert "{AGENTES}" not in bloco and "agentes.py" in bloco and "{AGENTES}" not in commands.system_block()
     assert "agentes.py" not in commands.system_block(), "fora do modo equipe o prompt nao fala de agentes"
-    assert runtime.delegacao_em(f'{commands.comando_agentes()} flash "ajuste"')[0] == "flash"
+    assert runtime.delegacao_em(f'{commands.comando_agentes()} writer "ajuste"')[0] == "writer"
     print("agentes ok")
     return 0
 
