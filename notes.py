@@ -119,6 +119,42 @@ def save(rel, text, mtime):
     return _mtime(p)
 
 
+MARCA = "<!-- fedora-anotacoes -->"
+MAX_ANOTACAO = 500
+_ITEM = re.compile(r"- [0-9]{2}:[0-9]{2} .*")
+
+
+def anotar(texto, now=None):
+    """Append one line ('- HH:MM texto') to today's daily note, in a '## Fedora' section marked by MARCA.
+    The section is only extended while it is still the end of the note; if the person wrote below it, a new section
+    starts. Never rewrites what is already there. Goes through save(), so it keeps the conflict check and the
+    newline style; if the note changed meanwhile it reads again and redoes once. Returns the path shown in the UI."""
+    agora = now or datetime.datetime.now(TZ)
+    linha = " ".join(str(texto or "").split()).replace("<", "&lt;")[:MAX_ANOTACAO]
+    if not linha:
+        raise ValueError("anotação vazia")
+    if not memory.VAULT.is_dir():      # e.g. run by hand without the server's .env: don't invent a vault folder
+        raise ValueError("cofre não encontrado (JARVIS_VAULT)")
+    item = f"- {agora:%H:%M} {linha}"
+    rel = today_rel(agora)
+    for _ in range(2):
+        atual = read(rel)
+        texto_nota = atual["text"]
+        i = texto_nota.rfind(MARCA)
+        resto = [x for x in texto_nota[i + len(MARCA):].split("\n") if x.strip()] if i >= 0 else None
+        if resto is not None and all(_ITEM.fullmatch(x) for x in resto):
+            novo = texto_nota.rstrip("\n") + "\n" + item + "\n"
+        else:
+            base = texto_nota.rstrip("\n")
+            novo = (base + "\n\n" if base.strip() else "") + f"## Fedora\n{MARCA}\n{item}\n"
+        try:
+            save(rel, novo, atual["mtime"])
+            return atual["path"]
+        except Conflict:
+            continue
+    raise Conflict("a nota mudou enquanto eu anotava; tente de novo")
+
+
 def vault_summary():
     files = [p for p in memory.VAULT.rglob("*.md")
              if not any(x.startswith(".") for x in p.relative_to(memory.VAULT).parts)]
@@ -265,6 +301,40 @@ def _teste():
         assert (DAILY / nfd).read_bytes() == b"nfd 2\n"
     finally:
         today_rel = real_today
+    # anotar(): section created once, lines appended, the person's text above and below is never touched
+    agora = datetime.datetime(2026, 3, 20, 9, 5, tzinfo=TZ)
+    rel = today_rel(agora)
+    alvo = DAILY / rel
+    anotar("Atualizei o Graphify\npara a 0.9.105 <b>", agora)                 # new note: created
+    assert alvo.read_bytes() == (f"## Fedora\n{MARCA}\n- 09:05 Atualizei o Graphify para a 0.9.105 &lt;b>\n").encode()
+    anotar("Segunda linha", agora.replace(minute=40))
+    assert alvo.read_text(encoding="utf-8").endswith(f"{MARCA}\n- 09:05 Atualizei o Graphify para a 0.9.105 &lt;b>\n- 09:40 Segunda linha\n")
+    assert alvo.read_text(encoding="utf-8").count("## Fedora") == 1
+    alvo.write_bytes(alvo.read_bytes() + b"\nEscrevi isto depois.\n")          # the person wrote below the section
+    anotar("Terceira", agora.replace(hour=18, minute=0))
+    t = alvo.read_text(encoding="utf-8")
+    assert t.count("## Fedora") == 2 and "Escrevi isto depois.\n\n## Fedora\n" in t and t.endswith("- 18:00 Terceira\n"), t
+    alvo.write_bytes(("# Dia\r\nminha parte\r\n").encode())                    # CRLF note without a section
+    anotar("Em CRLF", agora)
+    assert alvo.read_bytes() == f"# Dia\r\nminha parte\r\n\r\n## Fedora\r\n{MARCA}\r\n- 09:05 Em CRLF\r\n".encode()
+    for vazio in ("", "   \n ", None):
+        try:
+            anotar(vazio, agora)
+            raise AssertionError("empty note accepted")
+        except ValueError:
+            pass
+    assert len(anotar("x" * 2000, agora)) > 0 and max(map(len, alvo.read_text(encoding="utf-8").split("\n"))) <= MAX_ANOTACAO + 20
+    assert not list(DAILY.rglob("*.jarvis-tmp"))
+    real_vault = memory.VAULT
+    try:
+        memory.VAULT = raiz / "nao-existe"
+        try:
+            anotar("x", agora)
+            raise AssertionError("missing vault accepted")
+        except ValueError as e:
+            assert "cofre" in str(e) and not (raiz / "nao-existe").exists()
+    finally:
+        memory.VAULT = real_vault
     print("notes ok")
 
 
@@ -272,5 +342,11 @@ if __name__ == "__main__":
     import sys
     if "--teste" in sys.argv:
         _teste()
+    elif len(sys.argv) >= 3 and sys.argv[1] == "--anota":
+        try:
+            print("anotado em", anotar(" ".join(sys.argv[2:])))
+        except (ValueError, Conflict, OSError) as e:
+            print("não anotei:", e)
+            sys.exit(1)
     else:
-        print("uso: python notes.py --teste   (offline, pasta temporária)")
+        print('uso: python notes.py --anota "texto"   |   python notes.py --teste   (offline, pasta temporária)')

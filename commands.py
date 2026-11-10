@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 import threading
 import time
 import uuid
@@ -74,9 +75,29 @@ def _tokens_block():
 EQUIPE_FILE = ROOT / "docs" / "EQUIPE.md"
 
 
+def comando_agentes():
+    """The shell command any engine uses to call a team agent: absolute paths with /, so it works in bash and PowerShell."""
+    return f'"{pathlib.Path(sys.executable).as_posix()}" "{(ROOT / "agentes.py").as_posix()}"'
+
+
+def comando_nota():
+    """The shell command that appends one line to today's daily note (notes.py --anota)."""
+    return f'"{pathlib.Path(sys.executable).as_posix()}" "{(ROOT / "notes.py").as_posix()}" --anota'
+
+
+NOTA_RULES = """
+## Anotar no cofre
+Quando o usuário pedir para anotar algo, ou contar algo que aconteceu ou que ele decidiu, ou quando você concluir uma mudança relevante no projeto a pedido dele, grave UMA linha curta na daily note de hoje: {NOTA} "<texto>"
+O texto é uma frase em português, como fato ("Atualizei o Graphify para a 0.9.105"). Não anote por conta própria o que ele não pediu nem contou, e nunca anote segredo (senha, token, CPF, cartão). Confirme em poucas palavras ("Anotei.")."""
+
+
+def _nota():
+    return NOTA_RULES.replace("{NOTA}", comando_nota())
+
+
 def _equipe():
     try:
-        return EQUIPE_FILE.read_text(encoding="utf-8")
+        return EQUIPE_FILE.read_text(encoding="utf-8").replace("{AGENTES}", comando_agentes())
     except OSError:
         return ""
 
@@ -91,7 +112,7 @@ def system_block(chat=False, equipe=False):
         out.append(f"## Standing objective\n{d['goal']}")
     if d["personality"]:
         out.append(f"## Tone overlay\n{d['personality']}")
-    out.append((CHAT_STYLE if chat else VOICE_STYLE) + PC_RULES)
+    out.append((CHAT_STYLE if chat else VOICE_STYLE) + PC_RULES + _nota())
     if equipe and not chat:
         out.append(_equipe())
     return "\n\n".join(out)

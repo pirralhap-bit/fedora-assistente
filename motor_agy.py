@@ -14,8 +14,9 @@ Limite conhecido, igual ao do Claude: DENY e freio contra frase mal ouvida, nao 
 Diferencas em relacao ao Claude, todas medidas em 2026-11-09 (agy 1.5.3):
 - sem `--append-system-prompt`: o bloco de sistema vai no inicio da mensagem (por stdin, sem o limite de 32k do Windows);
 - sem `--tools`/modo leve: o agy sempre carrega o conjunto dele (~11k tokens); no modo leve so desliga skills/slash;
-- sem subagentes `Agent`: "equipe" roda como "completo" (o agy tem os proprios subagentes);
-- sem janelas de cota (rate_limit_event): so contamos tokens por turno (STATS) para a regra de troca de motor.
+- sem a ferramenta `Agent`: a equipe (agentes/, agentes.py) e chamada pelo shell, igual no Claude, entao "equipe" funciona nos dois;
+- sem janelas de cota (rate_limit_event): so contamos tokens por turno (STATS), para o HUD; a regra de troca de motor
+  (motor_regra.py) olha so o uso do Claude.
 """
 import collections
 import json
@@ -36,7 +37,7 @@ MODELO_COMPLETO = os.environ.get("AGY_MODEL_COMPLETO", "gemini-4-argon-medium").
 # auto = --mode auto (revisao do proprio agy; em headless nao executa comandos que pedem aprovacao)
 # plan = so le e planeja
 PERMISSAO = os.environ.get("AGY_PERMISSION", "bypass").strip().lower()
-STATS = {"turnos": 0, "tokens": 0, "ultimo": 0}   # uso do motor nesta execucao (base da regra de troca de motor)
+STATS = {"turnos": 0, "tokens": 0, "ultimo": 0}   # uso do agy nesta execucao (so informativo: nao entra na regra de troca)
 
 _LOCAL = pathlib.Path(os.environ.get("LOCALAPPDATA") or pathlib.Path.home() / ".local" / "state") / "fedora-assistente"
 SETTINGS = pathlib.Path(os.environ.get("AGY_SETTINGS") or _LOCAL / "agy-settings.json")
@@ -57,6 +58,21 @@ def _agy_base():
         if os.path.exists(local):
             return [local]
     return ["agy"]
+
+
+def recusa_script_cmd(base):
+    """Erro (str) se o executavel resolve para .cmd/.bat: o cmd.exe reinterpreta & e " do argv (a tarefa iria parar no
+    shell). None se e um executavel de verdade (.exe ou interpretador)."""
+    exe = (shutil.which(base[0]) or base[0]) if base else ""
+    if str(exe).lower().endswith((".cmd", ".bat")):
+        return f"{exe} e um script .cmd/.bat (o cmd.exe interpretaria a tarefa); aponte para o .exe (AGY_CMD/CLAUDE_CMD)"
+    return None
+
+
+def instalado():
+    """O executavel do agy existe (barato, sem subir processo): a regra de troca so escolhe o agy se ele estiver aqui."""
+    base = _agy_base()
+    return bool(base) and (shutil.which(base[0]) is not None or os.path.exists(base[0]))
 
 
 def disponivel():
@@ -115,10 +131,17 @@ def regras_deny():
     return list(dict.fromkeys(out)), {"comandos": len(comandos), "unicas": len(out)}
 
 
+def traducao_valida(regras, n):
+    """A traducao do DENY tem as travas minimas: >= 50 regras de comando e o bloqueio de leitura do .env e do token.
+    Fonte unica: o motor (escreve_settings) e os agentes (agentes.settings_agy) usam esta conferencia."""
+    return (n.get("comandos", 0) >= 50 and "read_file(.env)" in regras
+            and f"read_file({_norm_caminho(_LOCAL)})" in regras)
+
+
 def escreve_settings(caminho=None):
-    """Grava o settings.json do agy so com `permissions.deny`. Falha fechada: sem regras de comando, levanta erro."""
+    """Grava o settings.json do agy so com `permissions.deny`. Falha fechada: sem as travas minimas, levanta erro."""
     regras, n = regras_deny()
-    if n["comandos"] < 50 or not any(r.startswith("read_file(") for r in regras):
+    if not traducao_valida(regras, n):
         raise RuntimeError(f"traducao do DENY para o agy saiu incompleta ({n}); motor agy nao inicia sem as travas")
     caminho = pathlib.Path(caminho or SETTINGS)
     caminho.parent.mkdir(parents=True, exist_ok=True)
@@ -163,7 +186,21 @@ def _chaves(parametros):
     return {_CHAVES.get(k, k): v for k, v in parametros.items()}
 
 
+def com_contexto(system, session_id=None):
+    """Cache manual (contexto.py): o resumo pronto do projeto abre o bloco de sistema da PRIMEIRA mensagem de uma sessão nova.
+    Sessão retomada (--conversation) já o tem no histórico: não repete. FEDORA_CONTEXTO_AGY=0 desliga (para comparar)."""
+    if runtime.valid_session(session_id):
+        return system
+    try:
+        import contexto
+        ctx = contexto.bloco()
+    except Exception:  # noqa: BLE001
+        return system
+    return f"{ctx}\n\n{system}" if ctx and system else (ctx or system)
+
+
 def run(message, session_id=None, system=None, full=True):
+    system = com_contexto(system, session_id)
     with runtime.EXECUTION_LOCK:
         yield from _run_locked(message, session_id, system, full)
 
@@ -176,13 +213,16 @@ def _run_locked(message, session_id, system, full):
     try:
         settings = escreve_settings()
         cmd = monta_comando(session_id, full, settings)
+        ruim = recusa_script_cmd(cmd)
+        if ruim:
+            raise RuntimeError(ruim)
     except (RuntimeError, OSError) as e:
         yield dict(t="error", message=f"motor agy desligado por seguranca: {e}"[:400])
         return
     try:
         proc = subprocess.Popen(cmd, cwd=runtime.WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                env=dict(os.environ, PYTHONUTF8="1"))
+                                env=dict(os.environ, PYTHONUTF8="1", FEDORA_MOTOR_TURNO="agy"))   # agents on both subscriptions follow this
         with runtime._ACTIVE_LOCK:
             runtime._ACTIVE_PROC = proc
     except FileNotFoundError:
@@ -219,6 +259,7 @@ def _run_locked(message, session_id, system, full):
     texto_visto = streamed = finished = False
     primeiro = True
     ultimo = time.monotonic()
+    pendentes = set()   # passos de ferramenta ainda sem DONE/ERROR (ex.: o shell esperando agentes.py)
     try:
         while not done.is_set() or q:
             if runtime.CANCEL.is_set():
@@ -232,9 +273,10 @@ def _run_locked(message, session_id, system, full):
             if linha is None:
                 if proc.poll() is not None and done.is_set():
                     break
-                if time.monotonic() - ultimo > runtime.IDLE_TIMEOUT:
+                limite = runtime.limite_ocioso(bool(pendentes))
+                if time.monotonic() - ultimo > limite:
                     runtime.kill_tree(proc)
-                    yield dict(t="error", message=(f"agy went quiet for {runtime.IDLE_TIMEOUT}s and was stopped. "
+                    yield dict(t="error", message=(f"agy went quiet for {limite}s and was stopped. "
                                                    + " | ".join(list(errbuf)[-3:]))[:400])
                     return
                 time.sleep(0.04)
@@ -275,8 +317,10 @@ def _run_locked(message, session_id, system, full):
                     nome = s.get("tool_name") or info.get("name") or "tool"
                     if sid not in usos:
                         usos.add(sid)
-                        yield dict(t="tool", phase="use", id=sid, parent=None, name=nome,
-                                   input=runtime._short(_chaves(info.get("parameters") or {})))
+                        pendentes.add(sid)
+                        yield runtime.tool_event(dict(id=sid, name=nome, input=_chaves(info.get("parameters") or {})))
+                    if estado not in ("ACTIVE", "PENDING", "RUNNING", "WAITING"):
+                        pendentes.discard(sid)   # qualquer estado final (DONE, ERROR, cancelado, pulado) libera o relogio de ociosidade
                     if estado in ("DONE", "ERROR"):
                         res = dict(t="tool", phase="result", id=sid, parent=None, ok=(estado == "DONE" and not info.get("error")),
                                    name=nome)
@@ -392,6 +436,18 @@ def _teste():
     assert json.loads(monta_entrada("oi", "SIS"))["message"]["content"].startswith("<instrucoes_do_sistema>\nSIS")
     assert json.loads(monta_entrada("oi"))["message"]["content"] == "oi"
 
+    # cache manual de contexto: so na sessao nova, antes do sistema; retomada nao repete; env desliga
+    uuid_ = "5e67b166-8b8b-4a3d-807a-52a930995d09"
+    novo = com_contexto("SIS", None)
+    assert novo.startswith("<contexto_do_projeto>") and novo.endswith("\n\nSIS"), novo[:80]
+    assert com_contexto("SIS", uuid_) == "SIS" and com_contexto(None, uuid_) is None
+    assert com_contexto(None, None).startswith("<contexto_do_projeto>")
+    os.environ["FEDORA_CONTEXTO_AGY"] = "0"
+    try:
+        assert com_contexto("SIS", None) == "SIS"
+    finally:
+        del os.environ["FEDORA_CONTEXTO_AGY"]
+
     # falha fechada: sem DENY nao inicia
     real = runtime.DENY
     runtime.DENY = []
@@ -413,6 +469,7 @@ def _teste():
         {"event": "step_update", "step_update": {"conversation_id": conv, "step_index": 2, "state": "ACTIVE", "step_type": "tool", "tool_name": "run_command", "tool_info": {"name": "run_command", "parameters": {"CommandLine": "hostname"}}}},
         {"event": "step_update", "step_update": {"conversation_id": conv, "step_index": 2, "state": "DONE", "step_type": "tool", "tool_name": "run_command", "tool_info": {"name": "run_command", "parameters": {"CommandLine": "hostname"}, "output": "PC"}}},
         {"event": "step_update", "step_update": {"conversation_id": conv, "step_index": 3, "state": "ERROR", "step_type": "tool", "tool_name": "run_command", "tool_info": {"name": "run_command", "parameters": {"CommandLine": "rm x"}, "error": {"type": "TOOL_ERROR", "message": "negado"}}}},
+        {"event": "step_update", "step_update": {"conversation_id": conv, "step_index": 4, "state": "ACTIVE", "step_type": "tool", "tool_name": "run_command", "tool_info": {"name": "run_command", "parameters": {"CommandLine": "python agentes.py qa -"}}}},
         {"event": "result", "result": {"conversation_id": conv, "status": "SUCCESS", "response": "Aqui vai: coração.", "num_turns": 1, "usage": {"input_tokens": 11000, "output_tokens": 40, "total_tokens": 11040}}},
     ]
     falso = pasta / "agy_falso.py"
@@ -428,7 +485,8 @@ def _teste():
     assert tipos.count("latency") == 1 and tipos.index("latency") < tipos.index("delta")
     usos_ = [e for e in evs if e["t"] == "tool" and e["phase"] == "use"]
     resultados = [e for e in evs if e["t"] == "tool" and e["phase"] == "result"]
-    assert [u["input"] for u in usos_] == ["hostname", "rm x"] and [r["ok"] for r in resultados] == [True, False], evs
+    assert [u["input"] for u in usos_] == ["hostname", "rm x", "python agentes.py qa -"] and [r["ok"] for r in resultados] == [True, False], evs
+    assert [u.get("agent") for u in usos_] == [None, None, "qa"], usos_   # chamar um agente pelo shell aparece como delegacao
     assert evs[-2]["t"] == "usage" and evs[-2]["total_tokens"] == 11040 and evs[-1] == dict(t="complete", session_id=conv, ms=evs[-1]["ms"]), evs[-2:]
     assert STATS["turnos"] == 1 and STATS["tokens"] == 11040 and runtime._ACTIVE_PROC is None
 
@@ -453,6 +511,51 @@ def _teste():
     os.environ["AGY_CMD"] = f'"{sys.executable}" "{erro}"'.replace("\\", "/")
     evs = list(run("x"))
     assert evs[-1]["t"] == "error" and "boom" in evs[-1]["message"], evs
+
+    # validacao unica da traducao: sem o bloqueio de leitura do .env ou do token, nao inicia
+    assert traducao_valida(regras, n)
+    for tira in ("read_file(.env)", f"read_file({_norm_caminho(_LOCAL)})"):
+        sem = [r for r in regras if r != tira]
+        assert not traducao_valida(sem, n), tira
+        real_rd = regras_deny
+        globals()["regras_deny"] = lambda sem=sem: (sem, n)
+        try:
+            try:
+                escreve_settings(tmp)
+                raise AssertionError(f"escreve_settings aceitou sem {tira}")
+            except RuntimeError:
+                pass
+        finally:
+            globals()["regras_deny"] = real_rd
+    assert not traducao_valida(regras, dict(n, comandos=49))
+
+    # .cmd/.bat recusado (o cmd.exe reinterpretaria o argv); .exe e interpretador seguem
+    assert recusa_script_cmd([r"C:\x\agy.cmd"]) and recusa_script_cmd(["C:/x/AGY.BAT", "-p"]) and recusa_script_cmd([sys.executable]) is None
+    os.environ["AGY_CMD"] = str(pasta / "agy.cmd").replace("\\", "/")
+    evs = list(run("x"))
+    assert len(evs) == 1 and evs[0]["t"] == "error" and ".cmd" in evs[0]["message"], evs
+
+    # ferramenta em andamento (step tool ACTIVE sem DONE) pausa a contagem de ociosidade ate o teto
+    lento = pasta / "agy_lento.py"
+    passo = {"event": "step_update", "step_update": {"conversation_id": conv, "step_index": 1, "state": "ACTIVE", "step_type": "tool",
+                                                     "tool_name": "run_command", "tool_info": {"name": "run_command", "parameters": {"CommandLine": "x"}}}}
+    feito = {"event": "step_update", "step_update": dict(passo["step_update"], state="DONE")}
+    fim = {"event": "result", "result": {"conversation_id": conv, "status": "SUCCESS", "response": "ok", "usage": {}}}
+    lento.write_text("import json, sys, time\nsys.stdin.readline()\n"
+                     f"print(json.dumps({passo!r}), flush=True)\ntime.sleep(float(sys.argv[1]))\n"
+                     f"print(json.dumps({feito!r}), flush=True)\nprint(json.dumps({fim!r}), flush=True)\n", encoding="utf-8")
+    idle, ag_t = runtime.IDLE_TIMEOUT, runtime.AGENTE_TIMEOUT
+    runtime.IDLE_TIMEOUT, runtime.AGENTE_TIMEOUT = 1, -57   # teto = 3 s
+    try:
+        os.environ["AGY_CMD"] = f'"{sys.executable}" "{lento}" 2'.replace("\\", "/")
+        evs = list(run("x"))
+        assert evs[-1]["t"] == "complete", evs   # 2 s calado com a ferramenta rodando: passa do IDLE (1 s), nao do teto
+        os.environ["AGY_CMD"] = f'"{sys.executable}" "{lento}" 10'.replace("\\", "/")
+        t0 = time.monotonic()
+        evs = list(run("x"))
+        assert evs[-1]["t"] == "error" and "quiet for 3s" in evs[-1]["message"] and time.monotonic() - t0 < 8, evs
+    finally:
+        runtime.IDLE_TIMEOUT, runtime.AGENTE_TIMEOUT = idle, ag_t
     print("motor_agy ok")
 
 
