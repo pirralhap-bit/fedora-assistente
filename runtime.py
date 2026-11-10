@@ -229,9 +229,12 @@ def version():
     return detail if ok else "unavailable"
 
 
-def build_command(message, session_id=None, system=None, full=True):
+MSG_ARGV_MAX = 6000   # pedido maior que isso vai pelo stdin: so a DENY ja gasta ~14 mil dos 32.767 caracteres da linha de comando do Windows
+
+
+def build_command(message, session_id=None, system=None, full=True, via_stdin=False):
     cmd = _claude_base() + [
-        "-p", message,
+        "-p", *([] if via_stdin else [message]),   # sem texto depois do -p, o claude le o pedido do stdin
         "--output-format", "stream-json",
         "--include-partial-messages",
         "--verbose",
@@ -328,7 +331,8 @@ def run_claude(message, session_id=None, system=None, full=True):
 def _run_locked(message, session_id=None, system=None, full=True):
     global _ACTIVE_PROC
     started = time.monotonic()
-    cmd = build_command(message, session_id, system, full)
+    via_stdin = len(message) > MSG_ARGV_MAX
+    cmd = build_command(message, session_id, system, full, via_stdin)
 
     env = dict(os.environ)
     home = os.path.expanduser("~")
@@ -342,7 +346,8 @@ def _run_locked(message, session_id=None, system=None, full=True):
     try:
         env["PYTHONUTF8"] = "1"
         env["FEDORA_MOTOR_TURNO"] = "claude"   # agents that exist on both subscriptions follow the engine of this turn
-        proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1,
+                                stdin=subprocess.PIPE if via_stdin else subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         with _ACTIVE_LOCK:
             _ACTIVE_PROC = proc
@@ -380,6 +385,12 @@ def _run_locked(message, session_id=None, system=None, full=True):
 
     threading.Thread(target=pump_out, daemon=True).start()
     threading.Thread(target=pump_err, daemon=True).start()
+    if via_stdin:   # com as threads de leitura ja rodando: um pedido grande nao trava num pipe cheio
+        try:
+            proc.stdin.write(message)
+            proc.stdin.close()
+        except OSError:
+            pass   # o processo morreu: o erro real sai do stderr/rc la embaixo
 
     emitted_session = session_id
     last_usage = {}

@@ -45,6 +45,7 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 - **Modo leve (padrão)**: poucas ferramentas, contexto pequeno. "A fundo", "modo analista" ou "modo completo" no pedido liga o Claude Code completo (skills, PowerShell etc.). `FEDORA_MODO_LEVE=0` deixa sempre completo.
 - **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha a ferramenta Agent e o mapa de `docs/EQUIPE.md` (subagentes em `.claude/agents/`: junior, senior, qa). Custa cerca de 2,8 mil tokens a mais por turno.
 - **Resposta longa**: o que vem depois de uma linha `---` fica só na tela; só a parte antes dela é falada.
+- **Motor Google (agy)**: com o Claude acima de 55% na semana ou em 90% na sessão de 5 h, o Antigravity assume (detalhes em `docs/MOTORES.md`); a tela mostra "Google (Antigravity) conectado, motor principal" e "Claude em pausa até <reset>", e um agente sem o agy instalado falha com erro em vez de usar o Claude.
 - **Linha do tempo de agentes**: quando há delegação, a interface mostra quem recebeu o pedido, quais subagentes foram acionados e o que cada um usou.
 - Atalhos rápidos sem Claude (hora, data, abrir app/jogo/site/pasta, volume, mídia, print, timer, clima, sistema): ver `atalhos.md`.
 
@@ -62,9 +63,9 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 | `listener.py` | ouvido push-to-talk: atalho global, microfone, VAD, whisper, entrega o pedido ao servidor |
 | `vad.py` | Silero VAD (onnxruntime): decide o que é fala |
 | `speech.py` | voz: Piper (pt_BR faber) tocando por sounddevice; também fala o aviso do timer |
-| `whisper_server.py` | STT local, porta 8178: faster-whisper `small`, CPU/int8 (mesmo contrato do whisper.cpp) |
+| `whisper_server.py` | STT local, porta 8178: faster-whisper `medium`, CPU/int8 (mesmo contrato do whisper.cpp) |
 | `orb.py` | buraco negro flutuante sem borda; clique fala/encerra, arrastar move, botão direito abre o menu (`FEDORA_ORB=0` desliga) |
-| `notes.py` | lista, lê e salva daily notes; recusa salvar se a nota mudou fora (Obsidian) |
+| `notes.py` | lista, lê e salva daily notes; recusa salvar se a nota mudou fora (Obsidian). `python notes.py --anota "texto"` acrescenta uma linha `- HH:MM texto` na seção `## Fedora` da daily de hoje (marcador `<!-- fedora-anotacoes -->`); o Claude chama isso quando você pede para anotar ou conta algo (regra `NOTA_RULES` em `commands.py`) |
 | `tidy.py` | reorganiza a nota diária pelas seções (Gemini); não aplica se perder conteúdo |
 | `sysinfo.py` | CPU, RAM, GPU e status da última chamada ao Gemini |
 | `turnolog.py` | registro por turno (`turnos.jsonl`) |
@@ -73,7 +74,7 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 | `iniciar.ps1` | sobe servidor + STT |
 | `tools/` | `testa.ps1` (autotestes offline), `compara-voz.py` (compara modelos de voz em clipes salvos) |
 
-STT medido em CPU: `medium` e `large-v3-turbo` são 3 a 4 vezes mais lentos (6 a 9 s) e não acertam mais os nomes; ficou o `small`.
+STT em CPU: configurado com o modelo `medium` para maior capacidade, compreensão e robustez de vocabulário na transcrição local.
 
 ## Segurança
 

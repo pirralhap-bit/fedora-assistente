@@ -11,7 +11,7 @@ A chamada pode levar minutos: rode o comando com o timeout máximo da ferramenta
 | N3 | toca runtime.py, server.py, listener.py, DENY, segurança, concorrência, ou mais de 3 arquivos | `senior` (Opus) |
 | Revisão | todo código alterado | `qa` (Opus), só lê |
 
-Cada agente tem modelo fixo. Em qual assinatura ele roda não é com você: modelo que só existe numa assinatura roda nela; Opus e Sonnet seguem o motor deste turno, e com o agy no comando nada roda no Claude (o `junior` passa para o Gemini Flash). `{AGENTES} listar` mostra a equipe.
+Cada agente tem modelo fixo. Em qual assinatura ele roda não é com você: modelo que só existe numa assinatura roda nela; com o agy no comando nada roda no Claude, e o `junior`, o `senior` e o `qa` passam para o Gemini (Flash e Argon). `{AGENTES} listar` mostra a equipe.
 Sobe um nível, mesmo parecendo simples, se a tarefa altera dados do usuário (vault, state.json, notas), age de forma irreversível no PC, ou muda o que a Fedora pode fazer sozinha.
 Se um agente responder `ESCALAR: <motivo>` (ou a chamada falhar), não tente contornar nem fazer no lugar dele: passe ao nível acima, e ao usuário se já for N3.
 Agente não chama agente. Todo código alterado passa pelo `qa` antes de você dizer que terminou; rode também o autoteste do módulo (`python <modulo>.py`).

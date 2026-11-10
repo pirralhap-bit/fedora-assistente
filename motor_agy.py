@@ -186,7 +186,21 @@ def _chaves(parametros):
     return {_CHAVES.get(k, k): v for k, v in parametros.items()}
 
 
+def com_contexto(system, session_id=None):
+    """Cache manual (contexto.py): o resumo pronto do projeto abre o bloco de sistema da PRIMEIRA mensagem de uma sessão nova.
+    Sessão retomada (--conversation) já o tem no histórico: não repete. FEDORA_CONTEXTO_AGY=0 desliga (para comparar)."""
+    if runtime.valid_session(session_id):
+        return system
+    try:
+        import contexto
+        ctx = contexto.bloco()
+    except Exception:  # noqa: BLE001
+        return system
+    return f"{ctx}\n\n{system}" if ctx and system else (ctx or system)
+
+
 def run(message, session_id=None, system=None, full=True):
+    system = com_contexto(system, session_id)
     with runtime.EXECUTION_LOCK:
         yield from _run_locked(message, session_id, system, full)
 
@@ -421,6 +435,18 @@ def _teste():
     assert len(subprocess.list2cmdline(monta_comando(None, True, tmp))) < 2000   # a mensagem NAO vai na linha de comando
     assert json.loads(monta_entrada("oi", "SIS"))["message"]["content"].startswith("<instrucoes_do_sistema>\nSIS")
     assert json.loads(monta_entrada("oi"))["message"]["content"] == "oi"
+
+    # cache manual de contexto: so na sessao nova, antes do sistema; retomada nao repete; env desliga
+    uuid_ = "5e67b166-8b8b-4a3d-807a-52a930995d09"
+    novo = com_contexto("SIS", None)
+    assert novo.startswith("<contexto_do_projeto>") and novo.endswith("\n\nSIS"), novo[:80]
+    assert com_contexto("SIS", uuid_) == "SIS" and com_contexto(None, uuid_) is None
+    assert com_contexto(None, None).startswith("<contexto_do_projeto>")
+    os.environ["FEDORA_CONTEXTO_AGY"] = "0"
+    try:
+        assert com_contexto("SIS", None) == "SIS"
+    finally:
+        del os.environ["FEDORA_CONTEXTO_AGY"]
 
     # falha fechada: sem DENY nao inicia
     real = runtime.DENY

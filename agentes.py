@@ -7,10 +7,11 @@ Cada agente (pasta `agentes/`) tem funcao e MODELO fixos. Quem chama (o motor Cl
     <python> agentes.py listar
 
 Em qual ASSINATURA o agente roda depende so do modelo dele:
-- modelo que existe em uma assinatura so (Haiku: Claude; Gemini Flash/Argon: Google) roda nela, sempre;
-- modelo que existe nas duas (Opus, Sonnet 5.5) roda na assinatura do motor DO TURNO (FEDORA_MOTOR_TURNO, que o runtime
-  coloca no ambiente de quem chama e que vem da regra de troca, motor_regra.py: Claude acima de 55% na semana ou em 90% na
-  sessao de 5 h passa tudo para o agy); sem isso, le o estado gravado da regra.
+- Gemini (Flash/Argon) so existe no Google e roda la, sempre;
+- Haiku, Sonnet e Opus so existem no Claude e rodam la, EXCETO com o agy no comando do turno (FEDORA_MOTOR_TURNO, que o
+  runtime coloca no ambiente de quem chama e que vem da regra de troca, motor_regra.py: Claude acima de 55% na semana ou em
+  90% na sessao de 5 h passa tudo para o agy): ai nada roda no Claude e eles trocam pelo Gemini de SUBSTITUTO_NO_AGY
+  (haiku -> Flash low, sonnet -> Flash high, opus -> Argon high). Fora de um turno, le o estado gravado da regra.
 
 Seguranca: nenhum agente roda com permissao total. Cada um recebe so as ferramentas da funcao dele (edita: sim/nao e uma lista
 curta de comandos do catalogo COMANDOS) e a lista runtime.DENY (no agy, traduzida por motor_agy.regras_deny()) vale por cima.
@@ -40,15 +41,19 @@ MAX_TAREFA = 20000   # caracteres; a tarefa vai na linha de comando (limite de 3
 
 # modelo do agente -> id em cada assinatura que o tem. Mude AQUI para redistribuir.
 MODELOS = {
-    "opus": {"claude": "opus", "agy": "claude-opus-5-5-high"},
-    "sonnet": {"claude": "sonnet", "agy": "claude-sonnet-5-5-medium"},
+    "opus": {"claude": "opus"},
+    "sonnet": {"claude": "sonnet"},
     "haiku": {"claude": "haiku"},
     "gemini-flash": {"agy": "gemini-3.8-flash-low"},
+    "gemini-flash-high": {"agy": "gemini-3.8-flash-high"},
     "gemini-argon": {"agy": "gemini-4-argon-medium"},
+    "gemini-argon-high": {"agy": "gemini-4-argon-high"},
 }
 # Com o agy no comando (Claude acima de 55% na semana ou em 90% na sessao de 5 h) NADA roda no Claude. Modelo que so existe
 # no Claude troca, nessa chamada, pelo equivalente do Google. (O contrario nao vale: Gemini so existe no Google e fica la.)
-SUBSTITUTO_NO_AGY = {"haiku": "gemini-flash"}
+# Os Claude DENTRO do agy (claude-opus-5-5-*, claude-sonnet-5-5-*) nao sao mais usados: gastam muito mais cota do agy e rendem
+# menos (medido pelo usuario em 2026-11-10). Os pares abaixo sao a hipotese inicial; tools/compara_modelos.py confirma ou muda.
+SUBSTITUTO_NO_AGY = {"haiku": "gemini-flash", "sonnet": "gemini-flash-high", "opus": "gemini-argon-high"}
 
 # Catalogo do cabecalho `comandos:` (nada fora dele: carrega() recusa). Cada item vira regra estreita nos dois backends.
 GIT_SUB = ("status", "diff", "log", "show")
@@ -134,7 +139,10 @@ def _instalado(backend):
 
 
 def _motor_do_estado():
-    """Fora de um turno (CLI na mao): o estado gravado pela regra de troca (com o limite de 8 dias); sem espera, o Claude."""
+    """Fora de um turno (CLI na mao): o estado gravado pela regra de troca (com o limite de 8 dias); sem espera, o Claude.
+    FEDORA_MOTOR=claude|agy forca o motor e ignora a regra (como no runtime)."""
+    if runtime.MOTOR != "auto":   # forcado; valor invalido cai no Claude, como runtime.motor_atual()
+        return runtime.MOTOR if runtime.MOTOR in ("claude", "agy") else "claude"
     import motor_regra
     return "agy" if motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), time.time()) is not None else "claude"
 
@@ -144,12 +152,14 @@ def rota(ag, turno=None):
     modelo = ag["modelo"]
     pref = (turno or os.environ.get("FEDORA_MOTOR_TURNO") or _motor_do_estado()).strip().lower()
     tem = [b for b in ("claude", "agy") if b in MODELOS[modelo]]
-    if tem == ["claude"] and pref == "agy" and modelo in SUBSTITUTO_NO_AGY and _instalado("agy"):
+    if tem == ["claude"] and pref == "agy" and modelo in SUBSTITUTO_NO_AGY:
+        if not _instalado("agy"):   # nunca cai calado no Claude: com o agy no comando nada roda la
+            raise RuntimeError("motor do turno e o agy, mas o agy nao esta instalado; nada roda no Claude nesse estado")
         modelo = SUBSTITUTO_NO_AGY[modelo]
         escolhida, motivo = "agy", f"motor do turno e o agy: {ag['modelo']} vira {modelo}"
     elif len(tem) == 1:
         escolhida, motivo = tem[0], "modelo so existe nessa assinatura"
-    else:
+    else:   # reserva sem uso hoje (nenhum modelo de MODELOS esta nas duas); coberto no _teste
         escolhida = pref if pref in tem else "claude"
         motivo = f"modelo nas duas assinaturas: segue o motor do turno ({escolhida})"
         if not _instalado(escolhida):
@@ -392,6 +402,14 @@ def main(argv):
 # ---------------------------------------------------------------- autoteste
 
 def _teste():
+    motor_orig = runtime.MOTOR   # o teste mexe em runtime.MOTOR: devolve o valor de quem rodou
+    try:
+        return _teste_corpo()
+    finally:
+        runtime.MOTOR = motor_orig
+
+
+def _teste_corpo():
     global LOG, TIMEOUT
     import motor_agy
     import motor_regra
@@ -440,21 +458,59 @@ def _teste():
     motor_regra.ARQUIVO = tmp / "motor.json"
 
     # roteamento
+    runtime.MOTOR = "auto"   # o teste nao depende do FEDORA_MOTOR de quem roda
     assert rota(ags["junior"], "claude")[:2] == ("claude", "haiku")    # Haiku so existe no Claude
     assert rota(ags["junior"], "agy")[:2] == ("agy", "gemini-3.8-flash-low")   # ...mas com o agy no comando nada roda no Claude
     assert rota(ags["flash"], "claude")[0] == "agy"           # Gemini so existe no Google, mesmo com o turno no Claude
     for nome_ in ags:                                         # regra de troca: turno no agy => nenhum agente toca o Claude
         assert rota(ags[nome_], "agy")[0] == "agy", nome_
     assert rota(ags["argon"])[1] == "gemini-4-argon-medium"
-    assert rota(ags["qa"], "claude")[:2] == ("claude", "opus") and rota(ags["qa"], "agy")[:2] == ("agy", "claude-opus-5-5-high")
+    assert rota(ags["qa"], "claude")[:2] == ("claude", "opus") and rota(ags["qa"], "agy")[:2] == ("agy", "gemini-4-argon-high")
     os.environ["FEDORA_MOTOR_TURNO"] = "agy"
-    assert rota(ags["senior"])[0] == "agy"                    # compartilhado: segue o motor do turno
+    assert rota(ags["senior"])[0] == "agy"                    # turno no agy pelo ambiente: Opus vira Argon
     del os.environ["FEDORA_MOTOR_TURNO"]
     assert rota(ags["qa"])[0] == "claude"                     # sem turno e sem espera gravada: Claude
     motor_regra._grava(motor_regra.ARQUIVO, {"motor": "agy", "ate": time.time() + 3600})
     assert rota(ags["qa"])[0] == "agy"                        # fora de um turno: segue a espera gravada da regra
+    runtime.MOTOR = "claude"
+    assert rota(ags["qa"])[:2] == ("claude", "opus")          # FEDORA_MOTOR=claude forca e ignora a espera gravada
+    runtime.MOTOR = "xyz"
+    assert _motor_do_estado() == "claude" == runtime.motor_atual()   # FEDORA_MOTOR invalido: Claude, igual ao runtime
+    runtime.MOTOR = "auto"
     motor_regra._grava(motor_regra.ARQUIVO, {"motor": "agy", "ate": time.time() - 1})
     assert rota(ags["qa"])[0] == "claude"                     # espera vencida
+
+    # todo modelo so do Claude tem substituto no agy, e o substituto existe no Google
+    for m_, ids_ in MODELOS.items():
+        if list(ids_) == ["claude"]:
+            sub_ = SUBSTITUTO_NO_AGY.get(m_)
+            assert sub_ in MODELOS and "agy" in MODELOS[sub_], (m_, sub_)
+    # agy no turno (ex.: Claude em 56% na semana): haiku/sonnet/opus viram Gemini; agy ausente => erro, nunca o Claude
+    inst_real = _instalado
+    try:
+        globals()["_instalado"] = lambda b: True
+        for m_, id_ in (("haiku", "gemini-3.8-flash-low"), ("sonnet", "gemini-3.8-flash-high"), ("opus", "gemini-4-argon-high")):
+            assert rota(dict(ags["qa"], modelo=m_), "agy")[:2] == ("agy", id_), m_
+        globals()["_instalado"] = lambda b: b == "claude"
+        for m_ in ("haiku", "sonnet", "opus"):
+            try:
+                rota(dict(ags["qa"], modelo=m_), "agy")
+                raise AssertionError(f"{m_} caiu no Claude com o agy no turno e sem agy")
+            except RuntimeError as e:
+                assert "agy nao esta instalado" in str(e) and "nada roda no Claude" in str(e), e
+        assert rota(ags["qa"], "claude")[:2] == ("claude", "opus")   # FEDORA_MOTOR=claude / turno no Claude: nada muda
+        r = executa(ags["qa"], "revise", "agy")                     # o chamador devolve o erro legivel, sem quebrar
+        assert not r["ok"] and "agy nao esta instalado" in r["erro"], r
+        # ramo reserva (modelo nas duas assinaturas): segue o turno; cai na outra se a do turno faltar
+        MODELOS["_duplo"] = {"claude": "x-claude", "agy": "x-agy"}
+        duplo = dict(ags["qa"], modelo="_duplo")
+        globals()["_instalado"] = lambda b: True
+        assert rota(duplo, "agy")[:2] == ("agy", "x-agy") and rota(duplo, "claude")[:2] == ("claude", "x-claude")
+        globals()["_instalado"] = lambda b: b == "claude"
+        assert rota(duplo, "agy")[:2] == ("claude", "x-claude")
+    finally:
+        globals()["_instalado"] = inst_real
+        MODELOS.pop("_duplo", None)
 
     # comando do Claude: ferramentas e permissoes da funcao, nunca bypass, DENY junto, cabe nos 32k do Windows
     c = monta_claude(ags["qa"], "opus")
@@ -606,8 +662,8 @@ def _teste():
             pass
         finally:
             motor_agy.regras_deny = real_rd
-    assert len(subprocess.list2cmdline(monta_agy(ags["senior"], "x" * MAX_TAREFA, "claude-opus-5-5-high", sj))) < 30000   # tarefa maxima no agy cabe
-    a = monta_agy(ags["qa"], "revise", "claude-opus-5-5-high", sj)
+    assert len(subprocess.list2cmdline(monta_agy(ags["senior"], "x" * MAX_TAREFA, "gemini-4-argon-high", sj))) < 30000   # tarefa maxima no agy cabe
+    a = monta_agy(ags["qa"], "revise", "gemini-4-argon-high", sj)
     assert "--disable-slash-commands" not in a, "qa no agy: com a flag o --mode plan nao vale (medido) e o agente grava arquivo"
     assert "--disable-slash-commands" not in monta_agy(ags["argon"], "x", "gemini-4-argon-medium", sj)
     assert "--disable-slash-commands" in monta_agy(ags["flash"], "x", "gemini-3.8-flash-low", sj)   # quem edita mantem (accept-edits)
@@ -617,7 +673,7 @@ def _teste():
     aviso_qa, aviso_ar = aviso_headless_agy(ags["qa"]), aviso_headless_agy(ags["argon"])
     assert "ENCERRA" in aviso_qa and "git diff" in aviso_qa and "runtime.py" in aviso_qa and "llm.py --teste" in aviso_qa, aviso_qa
     assert "nenhum comando de shell" in aviso_ar and aviso_qa in a[a.index("-p") + 1]
-    assert a[a.index("--mode") + 1] == "plan" and a[a.index("--model") + 1] == "claude-opus-5-5-high" and "--dangerously-skip-permissions" not in a
+    assert a[a.index("--mode") + 1] == "plan" and a[a.index("--model") + 1] == "gemini-4-argon-high" and "--dangerously-skip-permissions" not in a
     assert monta_agy(ags["flash"], "ajuste", "gemini-3.8-flash-low", sj)[monta_agy(ags["flash"], "x", "m", sj).index("--mode") + 1] == "accept-edits"
 
     # execucao com os fakes
@@ -628,7 +684,7 @@ def _teste():
     r = executa(ags["flash"], "ajuste", "claude")
     assert r["ok"] and r["texto"] == "feito pelo agy" and r["assinatura"] == "agy" and r["tokens_in"] == 100, r
     r = executa(ags["qa"], "revise", "agy")
-    assert r["ok"] and r["assinatura"] == "agy" and r["modelo"] == "claude-opus-5-5-high", r
+    assert r["ok"] and r["assinatura"] == "agy" and r["modelo"] == "gemini-4-argon-high", r
     for modo, esperado in (("erro", "SUCCESS"), ("sai1", "boom")):
         os.environ["FAKE_MODO"] = modo
         r = executa(ags["flash"], "x", "agy")

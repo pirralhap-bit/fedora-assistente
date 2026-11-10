@@ -1,6 +1,6 @@
 """STT local para Windows: mesmo contrato do whisper-server do whisper.cpp (POST /inference, multipart -> {"text": ...}).
 
-    python whisper_server.py            # porta 8178, modelo WHISPER_MODEL (padrao: small)
+    python whisper_server.py            # porta 8178, modelo WHISPER_MODEL (padrao: medium)
     python whisper_server.py --pai PID  # encerra sozinho quando o processo PID (o server.py) morrer
     python whisper_server.py --teste    # autoteste (sem modelo, sem rede)
 
@@ -11,6 +11,7 @@ import email.policy
 import io
 import json
 import os
+import pathlib
 import sys
 import threading
 import time
@@ -19,8 +20,19 @@ import wave
 import numpy as np
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+_env = pathlib.Path(__file__).resolve().parent / ".env"
+if _env.exists():
+    for _line in _env.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            if _k.strip() == "WHISPER_MODEL":
+                os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+
 PORT = int(os.environ.get("WHISPER_PORT", "8178"))
-MODEL = os.environ.get("WHISPER_MODEL", "small")
+MODEL = os.environ.get("WHISPER_MODEL", "medium")
+if MODEL == "small":
+    MODEL = "medium"
 LANG = os.environ.get("WHISPER_LANG", "pt")
 _model = None
 # Segmento descartado quando o modelo acha que nao havia fala (no_speech_prob alto) E nao confia no texto (avg_logprob

@@ -160,6 +160,8 @@ def _teste():
     assert escolher(U((0.55, sem)), ag, claude)[0] == "claude"
     m, est, motivo = escolher(U((0.551, sem)), ag, claude)
     assert m == "agy" and est == {"motor": "agy", "ate": sem} and "na semana" in motivo and "55%" in motivo, (m, est, motivo)
+    m, est56, motivo = escolher(U((0.56, sem)), ag, claude)   # o caso do usuario: 56% na semana => agy (Gemini no lugar do Claude)
+    assert m == "agy" and est56 == {"motor": "agy", "ate": sem} and "56%" in motivo, (m, est56, motivo)
     # SESSAO: 89% fica; 90% ja conta ("em 90%"); vai ate o reset da janela de 5 h
     assert escolher(U(c=(0.89, ses)), ag, claude)[0] == "claude"
     m, est_s, motivo = escolher(U(c=(0.90, ses)), ag, claude)

@@ -34,6 +34,9 @@ button{cursor:pointer;touch-action:manipulation}
 .sg h2{margin:0 0 6px;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
 #orbits,#clm{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px}
 #clm{grid-template-columns:1fr;gap:9px}
+#clpausa{margin:0 0 8px;font:500 11px var(--data);color:var(--hot)}
+body[data-motor="agy"] #h-cl{color:var(--cool)}
+body[data-motor="agy"] .proto{color:var(--cool)}
 .m{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:10px;row-gap:4px;min-width:0}
 .m .k{font:300 11px var(--data);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);white-space:nowrap}
 .m .v{font:400 14px var(--ui);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -89,9 +92,24 @@ body[data-v="think"] .state i{background:var(--cool)}
 .te time{font:300 11px var(--data);color:var(--faint)}
 .te time b{font-weight:400;color:var(--dim);margin-left:8px;letter-spacing:.1em;text-transform:uppercase;font-size:10px}
 .te .ty{color:var(--ink);font-size:14px;margin:2px 0;overflow-wrap:anywhere}
-.te .ta{color:var(--dim);font-size:13px;line-height:1.55;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;cursor:pointer;white-space:pre-wrap}
+.te .ta{color:var(--dim);font-size:13px;line-height:1.55;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;cursor:pointer}
 .te .ta:empty{display:none}
 .te.open .ta{-webkit-line-clamp:unset;display:block;color:var(--ink)}
+.te .ta p,.te .ta ul,.te .ta ol,.te .ta pre,.te .ta table,.te .ta blockquote{margin:0 0 8px}
+.te .ta p:last-child,.te .ta ul:last-child,.te .ta ol:last-child,.te .ta pre:last-child,.te .ta table:last-child,.te .ta blockquote:last-child{margin-bottom:0}
+.te .ta ul,.te .ta ol{padding-left:18px}
+.te .ta h3{margin:10px 0 4px;font:500 13.5px var(--ui);color:var(--white-hot)}
+.te .ta h3:first-child{margin-top:0}
+.te .ta code{font:400 12px var(--data);color:var(--white-hot)}
+.te .ta pre{padding:6px 0 6px 10px;border-left:2px solid var(--faint)}
+.te .ta pre code{color:var(--ink);white-space:pre}
+.te .ta table{border-collapse:collapse;font-size:12.5px}
+.te.open .ta pre,.te.open .ta table{overflow-x:auto;display:block}
+.te .ta th,.te .ta td{padding:3px 10px 3px 0;text-align:left;border-bottom:1px solid #1d1b16}
+.te .ta th{color:var(--dim);font-weight:500}
+.te .ta blockquote{padding-left:10px;border-left:2px solid var(--faint);color:var(--dim)}
+.te .ta hr{border:0;border-top:1px solid #1d1b16;margin:8px 0}
+.te .ta a{color:var(--hot)}
 .te .tk{margin-top:3px;font:300 11px var(--data);color:var(--faint);display:grid;gap:1px}
 .te .tk span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .te .tk .bad{color:var(--warn)}
@@ -135,13 +153,15 @@ body[data-v="think"] .state i{background:var(--cool)}
 .me{margin:22px 0 6px;color:var(--dim);white-space:pre-wrap}
 .me::before{content:"você";display:block;font:400 10.5px var(--data);letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
 .ai{line-height:1.65}
-.ai p,.ai ul,.ai ol,.ai pre,.ai table{margin:0 0 12px}.ai ul{padding-left:20px}
+.ai p,.ai ul,.ai ol,.ai pre,.ai table,.ai blockquote{margin:0 0 12px}.ai ul,.ai ol{padding-left:20px}
 .ai h3{margin:16px 0 6px;font:500 16px var(--ui);color:var(--white-hot)}
 .ai code{font:400 13px var(--data);color:var(--white-hot)}
 .ai pre{overflow-x:auto;padding:10px 0 10px 14px;border-left:2px solid var(--faint)}
 .ai pre code{color:var(--ink);white-space:pre}
 .ai table{border-collapse:collapse;font-size:14px;display:block;overflow-x:auto}
 .ai th,.ai td{padding:4px 14px 4px 0;text-align:left;border-bottom:1px solid #1d1b16}.ai th{color:var(--dim);font-weight:500}
+.ai blockquote{padding-left:12px;border-left:2px solid var(--faint);color:var(--dim)}
+.ai hr{border:0;border-top:1px solid #1d1b16;margin:12px 0}
 .ai a{color:var(--hot)}
 .tl{margin:6px 0 10px;padding:2px 0 2px 12px;border-left:1px solid var(--faint);font:300 12px var(--data);color:var(--faint)}
 .tlr{display:flex;align-items:baseline;gap:8px;margin:3px 0;white-space:nowrap;overflow:hidden}
@@ -200,7 +220,7 @@ body[data-v="think"] .state i{background:var(--cool)}
   <aside id="tline" aria-label="Sistema e linha do tempo das conversas">
     <div id="sys">
       <section class="sg" aria-labelledby="h-pc"><h2 id="h-pc">Computador</h2><div id="orbits"></div></section>
-      <section class="sg" aria-labelledby="h-cl"><h2 id="h-cl">Plano do Claude</h2><div id="clm"></div></section>
+      <section class="sg" aria-labelledby="h-cl"><h2 id="h-cl">Plano do Claude</h2><p id="clpausa" aria-live="polite" hidden></p><div id="clm"></div></section>
     </div>
     <header class="tlh"><h2>Conversas</h2><button type="button" class="mute" id="tlclear" title="Limpa só esta lista, não apaga nada do PC">limpar</button></header>
     <div id="tlist" aria-live="polite"></div>
@@ -475,6 +495,36 @@ const head=()=>visual==='brain'?brain:hole;
 function setVisual(v,save=true){visual=v;if(save)try{localStorage.setItem('fedora-visual',v)}catch{}
   $('brain').hidden=v!=='brain';$('hole').hidden=v!=='hole';$('visual').textContent=v==='brain'?'visual: cérebro':'visual: buraco negro';head().resize()}
 
+// ================= markdown renderer (shared by the main conversation timeline and #chat) =================
+// escape first, then render the markdown shapes Claude/Gemini use (fenced code, headings, lists, tables, blockquotes, hr, bold, italic, inline code, links)
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function inl(s){const tok=[];const hold=h=>(tok.push(h),`\x00T${tok.length-1}\x00`);
+  let x=esc(s).replace(/`([^`]+)`/g,(_,c)=>hold(`<code>${c}</code>`))
+    .replace(/\[([^\]]+)\]\(((?:https?|file):[^)\s"]+)\)/g,(_,l,u)=>hold(`<a href="${u}" target="_blank" rel="noopener">${l}</a>`));
+  x=x.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+    .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g,'$1<i>$2</i>');
+  return x.replace(/\x00T(\d+)\x00/g,(_,i)=>tok[+i])}
+const UL=/^\s*[-*]\s+/,OL=/^\s*\d+\.\s+/,TBL=/^\s*\|.*\|\s*$/,TSEP=/^\s*\|[\s:|-]+\|\s*$/,HR=/^\s*-{3,}\s*$/,BQ=/^\s*>\s?/,HD=/^\s*#{1,4}\s+(.*)$/;
+const ROW=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+function block(t){
+  const ls=t.replace(/^\n+|\s+$/g,'').split('\n'),out=[];let i=0;
+  while(i<ls.length){const l=ls[i];
+    if(!l.trim()){i++;continue}
+    if(HR.test(l)){out.push('<hr>');i++;continue}
+    const h=l.match(HD);if(h){out.push(`<h3>${inl(h[1])}</h3>`);i++;continue}
+    if(BQ.test(l)){const q=[];while(i<ls.length&&BQ.test(ls[i]))q.push(inl(ls[i++].replace(BQ,'')));out.push(`<blockquote>${q.join('<br>')}</blockquote>`);continue}
+    if(UL.test(l)){const items=[];while(i<ls.length&&UL.test(ls[i]))items.push(`<li>${inl(ls[i++].replace(UL,''))}</li>`);out.push(`<ul>${items.join('')}</ul>`);continue}
+    if(OL.test(l)){const items=[];while(i<ls.length&&OL.test(ls[i]))items.push(`<li>${inl(ls[i++].replace(OL,''))}</li>`);out.push(`<ol>${items.join('')}</ol>`);continue}
+    if(TBL.test(l)&&i+1<ls.length&&TBL.test(ls[i+1])){const tl=[];while(i<ls.length&&TBL.test(ls[i]))tl.push(ls[i++]);
+      const rows=tl.filter(r=>!TSEP.test(r)).map(ROW);
+      if(rows.length)out.push(`<table><tr>${rows[0].map(c=>`<th>${inl(c)}</th>`).join('')}</tr>${rows.slice(1).map(r=>`<tr>${r.map(c=>`<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</table>`);
+      continue}
+    const p=[];while(i<ls.length&&ls[i].trim()&&!HR.test(ls[i])&&!HD.test(ls[i])&&!BQ.test(ls[i])&&!UL.test(ls[i])&&!OL.test(ls[i])&&!(TBL.test(ls[i])&&i+1<ls.length&&TBL.test(ls[i+1])))p.push(inl(ls[i++]));
+    if(p.length)out.push(`<p>${p.join('<br>')}</p>`)}
+  return out.join('')}
+const md=src=>String(src||'').replace(/\r\n?/g,'\n').split(/^```[^\n]*$/m).map((p,i)=>i%2?`<pre><code>${esc(p.replace(/^\n|\n$/g,''))}</code></pre>`:block(p)).join('');
+const plain=s=>String(s||'').replace(/```[\s\S]*?(```|$)/g,' O código está na tela. ').replace(/[*#`|>_]/g,' ').replace(/\s+/g,' ').trim();
+
 // ================= timeline of our conversations (right half; kept in this browser only) =================
 const TL_KEY='fedora-tl',TL_MAX=80;let tlData=[];try{tlData=JSON.parse(localStorage.getItem(TL_KEY)||'[]').filter(e=>e&&e.you)}catch{}
 const tlSave=()=>{try{localStorage.setItem(TL_KEY,JSON.stringify(tlData.slice(-TL_MAX).map(({at,you,ai,tools,canal,bad})=>({at,you,ai,tools,canal,bad}))))}catch{}};
@@ -485,9 +535,10 @@ let tlLastDay='';
 function tlNode(e,live){
   const d=tlDay(e.at);if(d!==tlLastDay){tlLastDay=d;tlList.append(el('div','td',tlDayName(e.at)))}
   const box=el('div','te'+(live?' live':'')+(e.bad?' bad':'')),tm=el('time',null,tlHour(e.at)),
-    ty=el('div','ty',tlClip(e.you,300)),ai=el('div','ta',e.ai||''),tk=el('div','tk');
+    ty=el('div','ty',tlClip(e.you,300)),ai=el('div','ta'),tk=el('div','tk');
+  if(e.ai)ai.innerHTML=md(e.ai);
   tm.append(el('b',null,e.canal==='chat'?'chat':'voz'));
-  ai.title='Clique para ver tudo';ai.onclick=()=>box.classList.toggle('open');
+  ai.title='Clique para ver tudo';ai.onclick=ev=>{if(!ev.target.closest('a')&&!String(getSelection()))box.classList.toggle('open')};
   // resumo: trocas de agente em linhas próprias (as 3 últimas) e as demais ferramentas contadas numa linha só
   const tools=()=>{const isAg=t=>t.agent||String(t.txt).startsWith('→'),cnt=new Map();
     for(const t of e.tools)if(!isAg(t)){const n=t.name||String(t.txt).split(' ')[0];cnt.set(n,(cnt.get(n)||0)+1)}
@@ -498,7 +549,7 @@ function tlNode(e,live){
 function tlRender(){tlList.replaceChildren();tlLastDay='';tlData.forEach(e=>tlNode(e,false));tlList.scrollTop=tlList.scrollHeight}
 function tlTurn(you,canal){
   const e={at:Date.now(),you:you||'',ai:'',tools:[],canal,bad:false},n=tlNode(e,true);tlData.push(e);tlList.scrollTop=tlList.scrollHeight;
-  return{ai(t){e.ai=tlClip(t,3000);n.ai.textContent=e.ai;tlList.scrollTop=tlList.scrollHeight},
+  return{ai(t){e.ai=tlClip(t,3000);n.ai.innerHTML=md(e.ai);tlList.scrollTop=tlList.scrollHeight},
     tool(ev){const txt=ev.agent?`→ ${ev.agent}${ev.desc?': '+ev.desc:''}`:ev.name||'ferramenta';e.tools.push({txt:tlClip(txt,70),name:ev.name||'',agent:ev.agent||'',bad:false});n.tools()},
     done(ok){e.bad=!ok;n.box.classList.remove('live');n.box.classList.toggle('bad',!ok);if(tlData.length>TL_MAX)tlData.splice(0,tlData.length-TL_MAX);tlSave()}}}
 $('tlclear').onclick=()=>{tlData=[];tlSave();tlRender()};
@@ -549,11 +600,22 @@ const ear=action=>api('/api/ear',{action}).catch(e=>say(errMsg(e)));
 // tells the ear whether this window is in front (push-to-talk; the server currently only acknowledges focus/blur)
 const focusEar=()=>api('/api/ear',{action:document.hasFocus()?'focus':'blur'}).catch(()=>{});
 addEventListener('focus',focusEar);addEventListener('blur',focusEar);
-function showStatus(){api('/api/status').then(s=>{
-  const brain=s.runtime==='claude'?'Claude conectado':'Claude indisponível';
+let statusPend=false;   // uma leitura de status por vez: o intervalo não empilha chamadas
+function showStatus(){if(statusPend)return;statusPend=true;api('/api/status').then(s=>{
+  // agy no comando (regra de uso do Claude ou FEDORA_MOTOR=agy): a tela diz que o Google responde e até quando o Claude pausa
+  const agy=s.motor==='agy';
+  document.body.dataset.motor=agy?'agy':'claude';
+  const brain=agy?'Google Gemini (Antigravity) ativo · Claude em pausa':s.runtime==='claude'?'Claude conectado':'Claude indisponível';
   const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'toque no buraco negro ou Ctrl+Alt+Espaço';
-  $('status').textContent=`${brain} · ${voice}`}).catch(e=>$('status').textContent='servidor: '+errMsg(e))}
+  $('status').textContent=`${brain} · ${voice}`;
+  $('h-cl').textContent=agy?'Motor: Google Gemini (Antigravity)':'Plano do Claude';
+  const ate=Number(s.motor_ate);
+  $('clpausa').textContent=!agy?'':ate>0?'Claude em pausa até '+new Date(ate*1000).toLocaleString('pt-BR',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+    :s.motor_forcado?'Claude em pausa (motor forçado no Google)':'Claude em pausa';
+  $('clpausa').hidden=!agy}).catch(e=>$('status').textContent='servidor: '+errMsg(e)).finally(()=>{statusPend=false})}
 showStatus();
+// a troca de motor acontece sozinha: relê a cada 15 s (aba visível e sem aviso curto na linha de status)
+setInterval(()=>{if(!document.hidden&&Date.now()>(aviso.ate||0))showStatus()},15000);
 // Piper speaks on the server, straight to the speakers: works with the window closed, no browser voices needed
 const speak=text=>{if(text)brain.pulse('falar',Math.min(15,1+text.length*.06),'voz');if(text)api('/api/speak',{text}).catch(e=>say(errMsg(e)))};
 
@@ -583,7 +645,7 @@ function connect(){const es=new EventSource('/api/events');es.onopen=focusEar;
 connect();
 // short notice that doesn't touch the answer on screen (a turn is still running): status line, chat or notes hint
 function aviso(t){if(!$('chat').hidden)return cstate(t);if(!$('notes').hidden)return hint(t);
-  $('status').textContent=t;clearTimeout(aviso.t);aviso.t=setTimeout(showStatus,4000)}
+  $('status').textContent=t;clearTimeout(aviso.t);aviso.ate=Date.now()+4000;aviso.t=setTimeout(showStatus,4000)}
 let parado=false;   // Esc on this turn: keep the partial answer on screen, don't speak it
 function run(text){if(busy)return aviso('Espere a resposta (ou Esc).');busy=true;parado=false;command(text).finally(()=>{busy=false})}
 async function command(raw){
@@ -603,7 +665,7 @@ async function command(raw){
   await askClaude(text)}
 async function askClaude(text){
   // a resposta aparece só na linha do tempo (à direita); embaixo do cérebro ficam apenas os avisos curtos do say()
-  setV('think');let out='';const tt=tlTurn(text,'voz'),full=()=>out.replace(SPLIT,'\n\n').trim();say('');
+  setV('think');let out='';const tt=tlTurn(text,'voz'),full=()=>out.trim();say('');
   if(!$('notes').hidden)hint('Perguntando ao Claude: '+text);
   try{await streamRun({message:text},ev=>{
         if(ev.t==='delta'){out+=ev.text;tt.ai(full())}
@@ -679,19 +741,6 @@ addEventListener('beforeunload',e=>{if(dirty()){e.preventDefault();e.returnValue
 $('back').addEventListener('click',e=>{if(dirty()&&!confirm('Há alterações não salvas. Sair mesmo assim?'))e.preventDefault()});
 
 // ================= chat =================
-// tiny markdown: escape first, then only the shapes Claude uses (code, headings, lists, tables, bold, links)
-const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const inl=s=>esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
-  .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
-const LI=/^\s*([-*]|\d+\.)\s+/,ROW=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
-function block(t){return t.split(/\n{2,}/).map(b=>{b=b.replace(/^\n+|\s+$/g,'');if(!b)return'';const ls=b.split('\n');
-  const h=b.match(/^#{1,4}\s+(.*)$/);if(h&&ls.length===1)return`<h3>${inl(h[1])}</h3>`;
-  if(ls.every(l=>LI.test(l)))return`<ul>${ls.map(l=>`<li>${inl(l.replace(LI,''))}</li>`).join('')}</ul>`;
-  if(ls.length>1&&ls.every(l=>/^\s*\|.*\|\s*$/.test(l))){const rows=ls.filter(l=>!/^\s*\|[\s:|-]+\|\s*$/.test(l)).map(ROW);
-    return`<table><tr>${rows[0].map(c=>`<th>${inl(c)}</th>`).join('')}</tr>${rows.slice(1).map(r=>`<tr>${r.map(c=>`<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</table>`}
-  return`<p>${ls.map(inl).join('<br>')}</p>`}).join('')}
-const md=src=>src.split(/^```[^\n]*$/m).map((p,i)=>i%2?`<pre><code>${esc(p.replace(/^\n|\n$/g,''))}</code></pre>`:block(p)).join('');
-const plain=s=>s.replace(/```[\s\S]*?(```|$)/g,' O código está na tela. ').replace(/[*#`|>_]/g,' ').replace(/\s+/g,' ').trim();
 const clog=$('clog'),cin=$('cin'),cstate=t=>{$('cstate').textContent=t};
 const saveLog=()=>{try{sessionStorage.setItem('fedora-chat',clog.innerHTML)}catch{}};
 try{clog.innerHTML=sessionStorage.getItem('fedora-chat')||''}catch{}
@@ -711,10 +760,10 @@ async function chatSend(text){
   busy=true;setV('think');clog.append(el('div','me',text));const tt=tlTurn(text,'chat');
   const ai=el('div','ai');let out='',tl=null,failed=false;const scroll=()=>clog.scrollTop=clog.scrollHeight;clog.append(ai);scroll();cstate('Pensando…');
   try{await streamRun({message:text,canal:'chat'},ev=>{
-      if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);tt.ai(plain(out));scroll()}
+      if(ev.t==='delta'){out+=ev.text;ai.innerHTML=md(out);tt.ai(out.trim());scroll()}
       else if(ev.t==='tool'&&ev.phase==='use'){brain.use(ev);tt.tool(ev);if(!tl){tl=timeline();ai.before(tl.box)}const ag=tl.start(ev);cstate(ag?'Delegando para '+ev.agent+'…':'Usando '+ev.name+'…');scroll()}
       else if(ev.t==='tool'&&ev.phase==='result'){brain.end(ev);if(tl)tl.end(ev)}
-      else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out);failed=true}});
+      else if(ev.t==='error'){out+=(out?'\n\n':'')+'**Erro:** '+ev.message;ai.innerHTML=md(out);tt.ai(out.trim());failed=true}});
     if(tl)tl.finish(!failed);tt.done(!failed);ai.dataset.raw=out;const b=el('button','ouvir','ouvir');b.type='button';ai.after(b);
     await refreshSystem();const l=S.claude&&S.claude.last;cstate(l?`${num.format(l.total)} tokens nesta resposta`:'')}
   catch(e){if(tl)tl.finish(false);ai.textContent=errMsg(e);tt.ai(errMsg(e));tt.done(false);cstate('')}

@@ -242,8 +242,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/status":
             g = memory.build_graph()
+            motor = runtime.motor_atual()
+            # fim da pausa do Claude (epoch), so com o agy no comando pela regra; forcado ou no Claude: None
+            ate = (motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), time.time())
+                   if motor == "agy" and runtime.MOTOR == "auto" else None)
             return self._json(dict(
-                runtime=runtime.runtime_kind(), version=runtime.version(), motor=runtime.motor_atual(),
+                runtime=runtime.runtime_kind(), version=runtime.version(), motor=motor, motor_ate=ate,
+                motor_forcado=runtime.MOTOR in ("claude", "agy"),
                 motor_motivo=(motor_regra.ULTIMO["motivo"] if runtime.MOTOR == "auto" else f"forcado: {runtime.MOTOR}"
                               if runtime.MOTOR in ("claude", "agy") else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude"),
                 model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
@@ -500,6 +505,13 @@ def _retro_loop():
             retro.rodar()
         except Exception as e:  # noqa: BLE001
             print(f"[retro] falhou: {type(e).__name__}: {str(e)[:200]}", flush=True)
+        try:   # cache manual do agy (contexto.py) anda junto com a retrospectiva: bloco automático + aviso de revisão
+            import contexto
+            r = contexto.atualiza()
+            if r.get("revisao_atrasada"):
+                print(f"[contexto] revise docs/CONTEXTO-AGY.md à mão (última revisão: {r.get('dias')} dias atrás)", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[contexto] falhou: {type(e).__name__}: {str(e)[:200]}", flush=True)
         time.sleep(RETRO_INTERVALO)
 
 
