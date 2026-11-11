@@ -6,3 +6,5 @@ psutil; sys_platform == "win32"
 pillow; sys_platform == "win32"
 tzdata; sys_platform == "win32"
 faster-whisper; sys_platform == "win32"
+python-frontmatter
+watchdog

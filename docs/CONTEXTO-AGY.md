@@ -25,7 +25,7 @@ Revisão manual: 2026-11-09
 - listener.py (ouvido, push-to-talk), vad.py, whisper_server.py (STT local), speech.py (voz Piper), orb.py (buraco negro flutuante), sysinfo.py (números da máquina).
 - memory.py: o vault Obsidian como grafo. notes.py: notas diárias. tidy.py: limpa texto ditado. llm.py: chamadas pequenas à API do Gemini.
 - turnolog.py: um registro por turno. retro.py: retrospectiva semanal no vault.
-- agentes.py + agentes/*.md: equipe (junior, writer, design, arquiteto, senior, qa), independente do motor; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
+- agentes.py + agentes/*.md: equipe (techlead, junior, writer, design, arquiteto, senior, qa), independente do motor; despachante.py: vigia o backlog no vault e aciona a equipe; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
 
 ## Como trabalhar sem gastar à toa
 - Abra só o arquivo do módulo citado no pedido. runtime.py e retro.py são grandes (700+ linhas): procure com grep e leia por trechos.
@@ -34,7 +34,7 @@ Revisão manual: 2026-11-09
 
 <!-- auto:inicio -->
 ## Mapa do Graphify (calculado em código)
-- Atualizado: gerado no commit 5047d0bb.
+- Atenção: o mapa foi gerado no commit 5047d0bb e o projeto está em 3ef566e; confira nos arquivos antes de confiar.
 Áreas principais: vad.py, time, Atalhos rápidos, listener.py, notes.py, runtime.py, Ouvido (listener), Orbe flutuante, speech.py, whisper_server.py, llm.py, retro.py, dupla.py, EQUIPE.md, motor_agy.py, commands.py, agentes.py, compara_modelos.py, sys.
 Funções e classes mais ligadas (comece por elas):
 - `_teste_corpo()` - 21 edges

@@ -27,11 +27,12 @@ Os agentes **não dependem do motor**: qualquer motor os chama pelo mesmo comand
 
 | Agente | Nível | Modelo | Assinatura | Faz |
 |---|---|---|---|---|
+| `techlead` | Triagem | Gemini 4 Argon High | só Google | triagem e escalonamento no despachante.py |
 | `writer` | N1 (Doc) | Gemini 3.8 Flash | só Google | Technical Writer: consolida, organiza, revisa e mantém a documentação (1 arquivo) |
 | `junior` | N1 (Código) | Gemini 3.8 Flash | só Google | edita código/configuração simples em 1 arquivo |
 | `design` | N2 (UI/UX) | Sonnet 4.6 | Claude (Gemini 3.8 Flash high quando o agy está no comando) | edita interfaces (`ui/index.html`), CSS, React/Next.js e Vercel |
 | `arquiteto` | N2 (Plano) | Gemini 4 Argon | só Google | só planeja, investiga causa raiz e rascunha specs/código |
-| `senior` | N3 | Opus 5.5 | Claude (Gemini 4 Argon high quando o agy está no comando) | edita múltiplos arquivos, segurança, concorrência e roda testes |
+| `senior` | N3 | Claude Fable (medium) | só Claude | edita múltiplos arquivos, segurança, concorrência e roda testes (mesmo com o agy no comando, apenas o senior usa o Claude Fable enquanto o resto da equipe fica no plano do Gemini) |
 | `qa` | Revisão | Opus 5.5 | Claude (Gemini 4 Argon high quando o agy está no comando) | só lê, audita diffs e roda testes |
 
 - **Qual assinatura**: cada modelo só existe em uma e roda nela (Haiku, Sonnet e Opus 5.5 no Claude; Gemini no Google). Exceção: com o agy no comando (Claude acima de 55% na semana ou em 90% na sessão de 5 h, `FEDORA_MOTOR_TURNO`, que o runtime põe no ambiente de quem chama), **nada roda no Claude** e os modelos do Claude trocam pelo Gemini de `SUBSTITUTO_NO_AGY`: Haiku → `gemini-3.8-flash-low`, Sonnet → `gemini-3.8-flash-high`, Opus → `gemini-4-argon-high`. Os Claude de dentro do agy (`claude-opus-5-5-*`, `claude-sonnet-5-5-*`) não são usados. Fora de um turno, segue o estado gravado da regra (ou o `FEDORA_MOTOR` forçado). Agy no comando mas não instalado: o agente **falha com erro** (`ESCALAR: ... nada roda no Claude nesse estado`), nunca cai calado no Claude.
@@ -46,7 +47,7 @@ Os agentes **não dependem do motor**: qualquer motor os chama pelo mesmo comand
 - **Falha**: a chamada devolve `ESCALAR: <agente> falhou (...)` e o tech lead decide. Agente não chama agente (`FEDORA_AGENTE`).
 - **Registro**: uma linha por chamada em `%LOCALAPPDATA%\fedora-assistente\agentes.jsonl` (agente, modelo, assinatura, tokens), base para uma regra de cota por agente.
 - **Mudar a equipe**: edite o `.md` do agente (nome, modelo, o que pode fazer) e, se for modelo novo, a tabela `MODELOS` em `agentes.py`. `python agentes.py --teste` confere que `docs/EQUIPE.md` cita todos.
-- **Ainda não existe**: o agente tech lead como definição própria (hoje o tech lead é o cérebro do turno).
+- **Triagem e backlog**: o `techlead` e o `despachante.py` cuidam da triagem e ciclo de atividades em `backlog/<projeto>/` no cofre.
 
 ## Terminal `dupla` (`dupla.py`, atalho `~\.local\bin\dupla.cmd`)
 Um terminal só, em qualquer pasta, com as duas assinaturas. Usa `runtime.run()`: **mesma regra, mesmo `motor.json` e mesmas travas** do assistente de voz.

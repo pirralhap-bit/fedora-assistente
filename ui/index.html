@@ -605,10 +605,11 @@ function showStatus(){if(statusPend)return;statusPend=true;api('/api/status').th
   // agy no comando (regra de uso do Claude ou FEDORA_MOTOR=agy): a tela diz que o Google responde e até quando o Claude pausa
   const agy=s.motor==='agy';
   document.body.dataset.motor=agy?'agy':'claude';
-  const brain=agy?'Google Gemini (Antigravity) ativo · Claude em pausa':s.runtime==='claude'?'Claude conectado':'Claude indisponível';
+  const modTxt=s.model&&s.model!=='Claude default'?` (${s.model})`:'';
+  const brain=agy?`Google Gemini${modTxt} ativo · Claude em pausa`:s.runtime==='claude'?`Claude${modTxt} conectado`:'Claude indisponível';
   const voice=s.ear_error?s.ear_error:s.ear==='mute'?'microfone desligado':'toque no buraco negro ou Ctrl+Alt+Espaço';
   $('status').textContent=`${brain} · ${voice}`;
-  $('h-cl').textContent=agy?'Motor: Google Gemini (Antigravity)':'Plano do Claude';
+  $('h-cl').textContent=agy?`Motor: Google Gemini${modTxt}`:'Plano do Claude';
   const ate=Number(s.motor_ate);
   $('clpausa').textContent=!agy?'':ate>0?'Claude em pausa até '+new Date(ate*1000).toLocaleString('pt-BR',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
     :s.motor_forcado?'Claude em pausa (motor forçado no Google)':'Claude em pausa';

@@ -28,3 +28,4 @@ Responda apenas `ESCALAR: <motivo em uma frase>` quando a tarefa:
 - alterar dados do usuário (vault, `state.json`, notas diárias);
 - estiver ambígua e a resposta mudar o resultado.
 Na dúvida, escale. Não mexa em nenhum arquivo além do pedido.
+Sempre termine sua resposta com uma única linha final no formato do contrato: `OK: <resumo em uma frase>` ou `ESCALAR: <motivo em uma frase>`.

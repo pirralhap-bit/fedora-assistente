@@ -30,3 +30,4 @@ Responda apenas `ESCALAR: <motivo em uma frase>` quando a tarefa:
 - tocar `runtime.py`, `server.py`, `listener.py`, `motor_agy.py`, `agentes.py`, `.env`, a lista `DENY`, `PC_RULES`, permissões ou qualquer coisa que apague, feche ou desligue;
 - alterar dados do usuário (vault, `state.json`, notas);
 - estiver ambígua e a resposta mudar o resultado.
+Sempre termine sua resposta com uma única linha final no formato do contrato: `OK: <resumo em uma frase>` ou `ESCALAR: <motivo em uma frase>`.

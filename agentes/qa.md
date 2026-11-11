@@ -26,3 +26,4 @@ Só abra com a ferramenta de leitura quando a revisão exigir checklist aprofund
 
 Responda com `APROVADO` ou `REPROVADO`, seguido de no máximo 5 itens, do mais grave ao menos grave, cada um com arquivo:linha e o que corrigir.
 Se a mudança for N3 ou tocar segurança, seja mais exigente: reprove na dúvida.
+Sempre termine sua resposta com uma única linha final no formato do contrato: `APROVADO: <resumo em uma frase>` ou `REPROVADO: <o que corrigir em uma frase>`.

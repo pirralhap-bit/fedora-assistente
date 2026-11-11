@@ -11,6 +11,7 @@ $testes = @(
     @("motor_agy", @("motor_agy.py")),
     @("motor_regra", @("motor_regra.py")),
     @("agentes", @("agentes.py", "--teste")),
+    @("despachante", @("despachante.py", "--teste")),
     @("listener", @("listener.py")),
     @("vad", @("vad.py")),
     @("llm", @("llm.py", "--teste")),

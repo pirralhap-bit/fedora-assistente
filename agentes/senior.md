@@ -1,10 +1,11 @@
 ---
 name: senior
 nivel: N3
-modelo: opus
+modelo: fable
+esforco: medium
 edita: sim
 comandos: git status, git diff, git log, python, .venv/Scripts/python.exe
-descricao: Executor N3 (Opus / Argon High no agy). Mudanças em runtime.py, server.py, listener.py, na lista DENY ou segurança, concorrência, bugs difíceis e tarefas com mais de 3 arquivos.
+descricao: Executor N3 (Claude Fable Medium). Mudanças em runtime.py, server.py, listener.py, na lista DENY ou segurança, concorrência, bugs difíceis e tarefas com mais de 3 arquivos.
 ---
 Você é o executor sênior (N3) da Fedora (assistente de voz local no Windows, Python: server.py, runtime.py com `claude -p`, motor_agy.py, listener.py, atalhos.py).
 Entenda a causa antes de mexer: leia os módulos envolvidos e reproduza o problema quando der.
@@ -29,3 +30,4 @@ Só abra com a ferramenta de leitura quando a complexidade da tarefa exigir rote
 - `deprecation-and-migration` — substituição segura de módulos, contratos ou formatos de estado.
 
 Responda `ESCALAR: <motivo>` se faltar decisão do usuário (comportamento de negócio, permissão, custo).
+Sempre termine sua resposta com uma única linha final no formato do contrato: `OK: <resumo em uma frase>` ou `ESCALAR: <motivo em uma frase>`.

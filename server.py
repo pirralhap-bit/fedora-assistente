@@ -242,16 +242,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/status":
             g = memory.build_graph()
-            motor = runtime.motor_atual()
-            # fim da pausa do Claude (epoch), so com o agy no comando pela regra; forcado ou no Claude: None
-            ate = (motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), time.time())
-                   if motor == "agy" and runtime.MOTOR == "auto" else None)
+            im = info_motor()
             return self._json(dict(
-                runtime=runtime.runtime_kind(), version=runtime.version(), motor=motor, motor_ate=ate,
-                motor_forcado=runtime.MOTOR in ("claude", "agy"),
-                motor_motivo=(motor_regra.ULTIMO["motivo"] if runtime.MOTOR == "auto" else f"forcado: {runtime.MOTOR}"
-                              if runtime.MOTOR in ("claude", "agy") else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude"),
-                model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
+                runtime=runtime.runtime_kind(), version=im["version"], motor=im["motor"], motor_ate=im["ate"],
+                motor_forcado=im["forcado"], motor_motivo=im["motivo"],
+                brain=im["brain"], model=im["model_voz"], model_full=im["model_full"],
+                permission=im["permission"],
                 workdir=runtime.WORKDIR, vault=g["vault"], notes=g["total"],
                 links=len(g["links"]), session=SESSION["id"],
                 ear=listener.EAR.state(), ear_error=listener.EAR.error))
@@ -515,16 +511,71 @@ def _retro_loop():
         time.sleep(RETRO_INTERVALO)
 
 
+def info_motor(motor=None, agora=None):
+    """Informações dinâmicas do motor ativo (claude ou agy), modelo, brain e permissões."""
+    agora = agora if agora is not None else time.time()
+    motor = runtime.motor_atual(motor)
+    forcado = runtime.MOTOR in ("claude", "agy")
+    ate = (motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), agora)
+           if motor == "agy" and runtime.MOTOR == "auto" else None)
+
+    if motor == "agy":
+        try:
+            import motor_agy
+            ok, ver = motor_agy.disponivel()
+            brain = f"Antigravity {ver} — sua assinatura Google" if ok else f"Antigravity ({ver})"
+            model_voz = motor_agy.MODELO
+            model_full = motor_agy.MODELO_COMPLETO
+            perm = motor_agy.PERMISSAO
+            versao = ver if ok else "agy"
+        except Exception as e:  # noqa: BLE001
+            brain = f"Antigravity (erro: {e})"
+            model_voz = "gemini"
+            model_full = "gemini"
+            perm = "bypass"
+            versao = "agy"
+        rotulo_motor = f"agy [{'forçado' if forcado else 'auto'}]"
+        if ate:
+            rotulo_motor += f" até {motor_regra._quando(ate)}"
+        model_desc = f"{model_voz} (voz) · {model_full} (completo)"
+    else:
+        kind = runtime.runtime_kind()
+        versao = runtime.version()
+        brain = (f"Claude Code {versao} — sua assinatura Anthropic"
+                 if kind == "claude" else f"MOCK — claude CLI not reachable ({kind})")
+        model_voz = runtime.MODEL or "Claude default"
+        model_full = None
+        perm = runtime.PERMISSION
+        rotulo_motor = f"claude [{'forçado' if forcado else 'auto'}]"
+        model_desc = model_voz
+
+    motivo = (motor_regra.ULTIMO["motivo"] if runtime.MOTOR == "auto" else f"forcado: {runtime.MOTOR}"
+              if runtime.MOTOR in ("claude", "agy") else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude")
+
+    return {
+        "motor": motor,
+        "rotulo_motor": rotulo_motor,
+        "brain": brain,
+        "model": model_desc,
+        "model_voz": model_voz,
+        "model_full": model_full,
+        "permission": perm,
+        "version": versao,
+        "ate": ate,
+        "forcado": forcado,
+        "motivo": motivo,
+    }
+
+
 def main():
-    kind = runtime.runtime_kind()
+    im = info_motor()
     g = memory.build_graph()
-    brain = (f"Claude Code {runtime.version()} — your subscription, no API key"
-             if kind == "claude" else "MOCK — claude CLI not reachable")
     print(f"""
   FEDORA · assistente local (toque no orbe ou Ctrl+Alt+Espaço)
   ────────────────────────────────────────────────
-  brain        {brain}
-  model        {runtime.MODEL or 'Claude default'}
+  engine       {im['rotulo_motor']}
+  brain        {im['brain']}
+  model        {im['model']}
   vault        {g['total']} notes · {len(g['links'])} links
                {g['vault']}
   voice        Piper ({os.path.basename(speech.VOICE)})
@@ -553,4 +604,13 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--teste" in sys.argv:
+        c = info_motor("claude", agora=1700000000)
+        assert c["motor"] == "claude" and "claude" in c["rotulo_motor"], c
+        assert "Claude" in c["brain"] and c["model_voz"] == "Claude default", c
+        a = info_motor("agy", agora=1700000000)
+        assert a["motor"] == "agy" and "agy" in a["rotulo_motor"], a
+        assert "Antigravity" in a["brain"] and "gemini" in a["model_voz"], a
+        print("server ok")
+        sys.exit(0)
     main()
