@@ -40,7 +40,16 @@ APP_CMD = os.environ.get("FEDORA_APP_CMD", f'"{_EDGE}" --app={{url}}')
 PREFIX = {"ok", "okay", "okey", "oquei", "oke", "ei", "hey", "e"}
 
 START_TIMEOUT = {"command": 10.0, "dictate": 15.0}     # s esperando você começar a falar
-SILENCE = {"command": 3.0, "dictate": 4.0}             # s de silêncio que encerram a fala
+def _silencio(raw, padrao=1.8):
+    """FEDORA_SILENCIO_COMANDO em segundos; vazio, inválido ou fora de (0, 30] cai no padrão."""
+    try:
+        v = float(str(raw).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return padrao
+    return v if 0 < v <= 30 and math.isfinite(v) else padrao
+
+
+SILENCE = {"command": _silencio(os.environ.get("FEDORA_SILENCIO_COMANDO")), "dictate": 4.0}  # s de silêncio que encerram a fala
 MAX_SECS = {"command": 90, "dictate": 600}
 MIN_SPEECH = 0.4                                        # s; menos que isso é clique/tosse
 AVISO_OCUPADA = "Espere a resposta (ou Esc)."           # atalho/clique com um turno do Claude rodando
@@ -392,4 +401,9 @@ if __name__ == "__main__":
     assert len(avisos) == 2 and avisos[0]["message"] == AVISO_OCUPADA, avisos
     ear.busy = lambda: 1 / 0                                           # um busy quebrado não trava o ouvido
     assert ear._ocupada() is False
+    # silêncio de fim de comando configurável; inválido cai no padrão; ditado fixo
+    for raw, want in [(None, 1.8), ("", 1.8), ("abc", 1.8), ("-1", 1.8), ("0", 1.8), ("nan", 1.8), ("inf", 1.8),
+                      ("999", 1.8), ("2.5", 2.5), ("2,5", 2.5), (" 3 ", 3.0)]:
+        assert _silencio(raw) == want, (raw, _silencio(raw), want)
+    assert SILENCE["dictate"] == 4.0
     print("listener ok")

@@ -118,13 +118,16 @@ def system_block(chat=False, equipe=False):
     return "\n\n".join(out)
 
 
+_TOKENS_ASK = re.compile(r"\b(tokens?|uso|plano|planos|cotas?)\b")   # só então o bloco de tokens entra no turno
+
+
 def turn_block(message=""):
     """The part that changes every turn (clock, tokens, queue, vault recall): rides in the user message,
     because anything that changes inside the system prompt throws away the cache behind it."""
     d = load()
     # saves a tool round trip (date) on "que horas são?" and lets "amanhã"/"sexta" resolve without one
     out = [time.strftime("## Agora\n%A, %d/%m/%Y %H:%M (horário local)")]
-    tok = _tokens_block()
+    tok = _tokens_block() if _TOKENS_ASK.search(atalhos.fold(message)) else ""
     if tok:
         out.append(tok)
     open_tasks = [t for t in d["tasks"] if not t.get("done")]
@@ -188,10 +191,67 @@ def _help():
 Anything else goes to Claude Code with the relevant vault notes attached."""
 
 
+_MOTOR_ALVO = {"agy": "agy", "antigravity": "agy", "google": "agy", "gemini": "agy", "claude": "claude", "cloud": "claude",
+               "auto": "auto", "automatico": "auto"}   # "cloud" = como o ouvido escreve "Claude"
+_MOTOR_VERBO = {"troca", "trocar", "muda", "mudar", "passa", "passar", "coloca", "colocar", "poe", "bota", "volta", "voltar",
+                "usa", "usar", "use", "vai", "ir", "fica", "ficar", "deixa", "deixar", "seleciona", "selecionar", "ativa", "ativar"}
+_MOTOR_LIGA = {"o", "a", "pra", "para", "pro", "no", "na", "em", "de", "do", "da", "por", "favor", "agora", "ai", "fedora", "ok",
+               "entao", "motor", "modo", "principal", "novamente", "so", "que", "e", "ele", "ela"}
+_MOTOR_COTA = {"sem", "cota", "acabou", "esta", "ta", "estourou", "zerou"}
+_MOTOR_PERGUNTA = {"qual", "que", "motor", "esta", "estao", "ta", "voce", "usando", "agora", "ai", "fedora", "e", "o", "ativo", "atual"}
+
+
+def motor_local(message):
+    """Comando de troca de motor falado/escrito ("troca o motor pro agy", "volta pro claude", "motor automatico"): so casa a
+    frase INTEIRA feita de palavras da lista (nada de "usa o claude pra revisar isso"), entao conversa comum nunca cai aqui.
+    Devolve ("claude"|"agy"|"auto", "troca"), ("", "status") ou None. Puro."""
+    palavras = re.findall(r"[a-z0-9]+", atalhos.fold(message))
+    if not palavras or len(palavras) > 9:
+        return None
+    alvos = [_MOTOR_ALVO[w] for w in palavras if w in _MOTOR_ALVO]
+    if "cota" in palavras and alvos and set(alvos) == {"agy"} and ({"sem", "acabou"} & set(palavras)) and \
+            set(w for w in palavras if w not in _MOTOR_ALVO) <= (_MOTOR_LIGA | _MOTOR_COTA):
+        return "agy", "sem_cota"   # "o agy esta sem cota": bloqueia o agy na regra (motor_regra.bloquear_agy)
+    if not alvos and "motor" in palavras and set(palavras) <= _MOTOR_PERGUNTA and ("qual" in palavras or "que" in palavras):
+        return "", "status"
+    if len(set(alvos)) != 1:
+        return None
+    resto = [w for w in palavras if w not in _MOTOR_ALVO]
+    if not set(resto) <= (_MOTOR_VERBO | _MOTOR_LIGA):
+        return None
+    if "motor" not in palavras and not (set(resto) & _MOTOR_VERBO):   # so "agy" solto nao e comando
+        return None
+    if alvos[0] == "auto" and "motor" not in palavras and "modo" not in palavras:   # "usa automatico" sozinho e ambiguo
+        return None
+    return alvos[0], "troca"
+
+
+def _motor_resposta(alvo, acao):
+    import runtime
+    if acao == "status":
+        agora = runtime.motor_atual()
+        return f"Estou no {agora}" + (" (fixo)." if runtime.motor_forcado() else " (automático).")
+    if acao == "sem_cota":
+        import time
+        import motor_regra
+        fim = motor_regra.bloquear_agy()   # sem reset conhecido do agy: padrao curto (BLOQUEIO_PADRAO)
+        return f"Certo, o agy fica fora da regra até {time.strftime('%H:%M', time.localtime(fim))}; sigo no Claude."
+    if alvo == "agy":
+        import motor_agy
+        if not motor_agy.instalado():
+            return "O agy não está instalado, continuo no motor atual."
+    runtime.definir_motor(alvo)
+    nome = {"agy": "o agy", "claude": "o Claude", "auto": "o automático, com a regra de 55% e 90%"}[alvo]
+    return f"Pronto, agora uso {nome}. A próxima fala já vai por ele."
+
+
 def handle(message, runner=None, info=None):
     """info (optional dict): filled by atalhos.route for the turn log (atalho, filtrado, gemini...)."""
     m = _CMD.match(message or "")
     if not m:
+        mt = motor_local(message)   # troca de motor: local e imediata, sem gastar um turno do modelo
+        if mt:
+            return dict(message=None, reply=_motor_resposta(*mt), note="comando")
         reply = atalhos.route(message, info)
         return dict(message=None, reply=reply, note="atalho") if reply else None
     cmd, arg = m.group(1).lower(), m.group(2).strip()

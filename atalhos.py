@@ -121,8 +121,12 @@ def _jogos():
     libs = re.findall(r'"path"\s+"([^"]+)"', (_STEAM / "steamapps/libraryfolders.vdf").read_text(encoding="utf-8", errors="replace")) \
         if (_STEAM / "steamapps/libraryfolders.vdf").exists() else []
     for lib in libs or [str(_STEAM)]:
+        lib = lib.replace("\\\\", "/")
         for f in glob.glob(lib + "/steamapps/appmanifest_*.acf"):
-            t = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
+            try:
+                t = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
             appid, name = re.search(r'"appid"\s+"(\d+)"', t), re.search(r'"name"\s+"([^"]+)"', t)
             if appid and name and not re.search(r"proton|runtime|redistributable", name.group(1), re.I):
                 yield appid.group(1), name.group(1)
