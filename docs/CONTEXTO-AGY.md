@@ -9,7 +9,7 @@ Quem edita: você (ou o Claude, quando pedir) à mão, junto com a retrospectiva
 números calculados em código. NÃO entra texto do Haiku aqui: a retrospectiva é "fedora-log" e não volta para prompts.
 Tamanho máximo que vai ao agy: contexto.MAX_CHARS. Comentários HTML como este NÃO vão ao agy.
 
-Revisão manual: 2026-11-09
+Revisão manual: 2026-11-12
 -->
 
 ## Regras fixas
@@ -20,12 +20,12 @@ Revisão manual: 2026-11-09
 
 ## Mapa do projeto (use isto no lugar de explorar)
 - server.py: servidor HTTP local, liga tudo. ui/index.html: a janela (HUD, chat, orbe).
-- runtime.py: roda o Claude headless e traduz os eventos; guarda DENY. motor_agy.py: o mesmo para o agy. motor_regra.py: qual motor responde (Claude, ou agy acima de 55% na semana / 90% na sessão de 5 h).
-- commands.py: comandos /barra, PC_RULES e contexto do vault. atalhos.py + atalhos.md: respostas rápidas por código (Gemini flash-lite escolhe o atalho). conversa.py: sessão e economia de tokens do turno.
+- runtime.py: roda o Claude headless e traduz os eventos; guarda DENY; dono único de troca de motor (`definir_motor`); turno leve não zera sessão em erro transitório. motor_agy.py: o mesmo para o agy (sem a ferramenta Agent). motor_regra.py: qual motor responde (Claude, ou agy acima de 55% na semana / 90% na sessão de 5 h; grava estado em `motor.json`).
+- commands.py: comandos /barra, troca de motor local por voz/chat (`motor_local`), PC_RULES e contexto do vault. atalhos.py + atalhos.md: respostas rápidas por código (Gemini flash-lite escolhe o atalho). conversa.py: sessão e economia de tokens do turno; frases da fala em etapas.
 - listener.py (ouvido, push-to-talk), vad.py, whisper_server.py (STT local), speech.py (voz Piper), orb.py (buraco negro flutuante), sysinfo.py (números da máquina).
 - memory.py: o vault Obsidian como grafo. notes.py: notas diárias. tidy.py: limpa texto ditado. llm.py: chamadas pequenas à API do Gemini.
 - turnolog.py: um registro por turno. retro.py: retrospectiva semanal no vault.
-- agentes.py + agentes/*.md: equipe (junior, flash, argon, senior, qa), independente do motor; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
+- agentes.py + agentes/*.md: equipe independente do motor (techlead, junior sonnet esforço medium, writer, design, arquiteto opus esforço high, senior opus esforço low, qa); despachante.py: vigia o backlog no cofre (`backlog/<projeto>/[<grupo>/]NNNN-slug.md`) e aciona a equipe, tolerando falhas transitórias; docs/EQUIPE.md e docs/MOTORES.md explicam. dupla.py: terminal único com as duas assinaturas.
 
 ## Como trabalhar sem gastar à toa
 - Abra só o arquivo do módulo citado no pedido. runtime.py e retro.py são grandes (700+ linhas): procure com grep e leia por trechos.
@@ -34,15 +34,15 @@ Revisão manual: 2026-11-09
 
 <!-- auto:inicio -->
 ## Mapa do Graphify (calculado em código)
-- Atenção: o mapa foi gerado no commit 3ca70225 e o projeto está em 913d54c; confira nos arquivos antes de confiar.
-Áreas principais: vad.py, time, Atalhos rápidos, tidy.py, notes.py, runtime.py, Ouvido (listener), Orbe flutuante, speech.py, listener.py, llm.py, retro.py, turnolog.py, EQUIPE.md, motor_agy.py, memory.py, conversa.py.
+- Atualizado: gerado no commit 9b91ccee.
+Áreas principais: vad.py, time, Atalhos rápidos, despachante.py, tidy.py, runtime.py, Ouvido (listener), Orbe flutuante, speech.py, whisper_server.py, llm.py, retro.py, dupla.py, json, motor_agy.py, commands.py, agentes.py, compara_modelos.py, listener.py, turnolog.py.
 Funções e classes mais ligadas (comece por elas):
-- `fold()` - 20 edges
-- `_run_locked()` - 17 edges
-- `Ear` - 16 edges
-- `_rodar()` - 16 edges
-- `_teste()` - 15 edges
-- `Handler` - 15 edges
-- `_teste_lote_e_qa()` - 15 edges
-- `_teste()` - 14 edges
+- `_teste_corpo()` - 22 edges
+- `fold()` - 22 edges
+- `executa()` - 21 edges
+- `_teste()` - 18 edges
+- `Ear` - 17 edges
+- `_rodar()` - 17 edges
+- `_teste()` - 17 edges
+- `Handler` - 16 edges
 <!-- auto:fim -->

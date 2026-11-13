@@ -168,14 +168,30 @@ def search(query, limit=6):
     return hits[:limit]
 
 
+_COMUNS = frozenset("""
+    para pelo pela pelos pelas como qual quais quem onde quando porque esse essa isso este esta isto aquele aquela
+    aquilo voce voces ele ela eles elas minha meu meus minhas nosso nossa seus suas dele dela sobre entre depois antes
+    agora ainda mais menos muito muita pouco tudo todo toda todos todas nada algo alguma algum cada mesmo mesma
+    fazer faz faca feito fale falar diga dizer pode podia poderia quero queria preciso tenho tem tinha estou esta
+    estava sera seria favor obrigado obrigada coisa coisas aqui hoje amanha ontem bom boa entao tipo assim vamos
+    abre abrir abra mostra mostrar veja ver olha olhar sabe saber acha achar fedora
+""".split())
+
+
 def _scored(message):
-    words = [w for w in re.split(r"[^a-z0-9]+", (message or "").lower()) if len(w) > 3]
+    from atalhos import fold   # lazy: tira acento, "configuração" vira uma palavra só
+    words = {w for w in re.split(r"[^a-z0-9]+", fold(message)) if len(w) > 3 and w not in _COMUNS}
     if not words:
         return []
     out = []
     for node in build_graph()["nodes"]:
-        haystack = (node["title"] + " " + node["snippet"]).lower()
-        score = sum(2 if w in node["title"].lower() else 1 for w in words if w in haystack)
+        title = fold(node["title"])
+        haystack = title + " " + fold(node["snippet"])
+        hits = [w for w in words if w in haystack]
+        in_title = any(w in title for w in hits)
+        if not (in_title or len(hits) >= 2):   # acerto forte: título ou duas palavras distintas
+            continue
+        score = sum(2 if w in title else 1 for w in hits)
         if score:
             out.append((score + node["degree"] * 0.1, node))
     out.sort(key=lambda pair: -pair[0])
@@ -188,7 +204,7 @@ def top_match(message):
     return hits[0][1]["id"] if hits else None
 
 
-def context_for(message, limit=4):
+def context_for(message, limit=2):
     """Pull the most relevant vault notes so Claude answers from real memory."""
     scored = _scored(message)
     if not scored:
@@ -219,4 +235,13 @@ if __name__ == "__main__":
     assert sorted(n["title"] for n in g["nodes"]) == ["Gabinete impressora", "Outra"], g["nodes"]
     assert not search("atalhos mais usados") and [n["title"] for n in search("gabinete")] == ["Gabinete impressora", "Outra"]
     assert "Retrospectiva" not in context_for("quais atalhos mais usados no gabinete impressora") and top_match("atalhos usados") is None
+    # dieta (card 0031): pedido genérico não traz nota; título ainda traz; acento não parte a palavra
+    (VAULT / "Configuração do Whisper.md").write_text("---\ntype: note\n---\nModelo medium na GPU.\n", encoding="utf-8")
+    build_graph(force=True)
+    assert context_for("como você está hoje, pode fazer isso para mim?") == ""
+    assert context_for("fale da nota") == "", "uma palavra só no corpo não basta"
+    assert "Configuração do Whisper" in context_for("qual a configuração do whisper?")
+    assert "Configuração do Whisper" in context_for("configuracao")
+    assert "Outra" in context_for("aquela nota comum sobre gabinete")   # duas palavras no corpo
+    assert context_for("gabinete impressora whisper configuração nota comum").count("### ") <= 2
     print("memory ok")

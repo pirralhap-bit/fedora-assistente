@@ -172,6 +172,7 @@ def cancelar():
         if t:
             t["cancelado"] = True
             (CHAT if t["canal"] == "chat" else SESSION)["id"] = None
+    speech.stop()   # corta a fala em curso e esvazia a fila das etapas
     return runtime.cancel_active()
 
 
@@ -193,6 +194,14 @@ def _obj(raw):
     if not isinstance(body, dict):
         raise ValueError("json object required")
     return body
+
+
+class Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # the browser closed the tab, reloaded or aborted a fetch mid-request (WinError 10053/10054, broken pipe): not a server fault
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -242,19 +251,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/status":
             g = memory.build_graph()
-            motor = runtime.motor_atual()
-            # fim da pausa do Claude (epoch), so com o agy no comando pela regra; forcado ou no Claude: None
-            ate = (motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), time.time())
-                   if motor == "agy" and runtime.MOTOR == "auto" else None)
+            im = info_motor()
             return self._json(dict(
-                runtime=runtime.runtime_kind(), version=runtime.version(), motor=motor, motor_ate=ate,
-                motor_forcado=runtime.MOTOR in ("claude", "agy"),
-                motor_motivo=(motor_regra.ULTIMO["motivo"] if runtime.MOTOR == "auto" else f"forcado: {runtime.MOTOR}"
-                              if runtime.MOTOR in ("claude", "agy") else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude"),
-                model=runtime.MODEL or "Claude default", permission=runtime.PERMISSION,
+                runtime=im["kind"], version=im["version"], motor=im["motor"], motor_ate=im["ate"],
+                motor_forcado=im["forcado"], motor_motivo=im["motivo"],
+                brain=im["brain"], model=im["model_voz"], model_full=im["model_full"],
+                permission=im["permission"],
                 workdir=runtime.WORKDIR, vault=g["vault"], notes=g["total"],
                 links=len(g["links"]), session=SESSION["id"],
-                ear=listener.EAR.state(), ear_error=listener.EAR.error))
+                ear=listener.EAR.state(), ear_error=listener.EAR.error, mudo=speech.mudo()))
 
         if p == "/api/events":   # ?passivo=1: the orb, which only shows level/state and must not count as an open page
             return self._events(parse_qs(urlparse(self.path).query).get("passivo", [""])[0] == "1")
@@ -264,6 +269,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == "/api/vault":
             return self._json(notes.vault_summary())
+
+        if p == "/api/backlog":   # the board's source of truth: status of the cards in the vault's backlog/ (read only)
+            try:
+                import despachante
+                return self._json(despachante.resumo_backlog())
+            except Exception as e:
+                return self._json(dict(error=f"backlog: {str(e)[:200]}"), 500)
 
         if p == "/api/daily":
             return self._json(dict(notes=notes.listing()))
@@ -298,10 +310,10 @@ class Handler(BaseHTTPRequestHandler):
         if raw is None:
             return self._json({"error": "body too large"}, 413)
         ctype = self.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        if p in {"/api/run", "/api/speak", "/api/cancel", "/api/chat/new", "/api/daily/save", "/api/tidy", "/api/ear"} and ctype != "application/json":
+        if p in {"/api/run", "/api/speak", "/api/cancel", "/api/chat/new", "/api/daily/save", "/api/tidy", "/api/ear", "/api/mudo"} and ctype != "application/json":
             return self._json({"error": "application/json required"}, 415)
         body = {}
-        if p in {"/api/run", "/api/speak", "/api/daily/save", "/api/tidy", "/api/ear"}:
+        if p in {"/api/run", "/api/speak", "/api/daily/save", "/api/tidy", "/api/ear", "/api/mudo"}:
             try:
                 body = _obj(raw)
             except ValueError as e:
@@ -312,11 +324,18 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 speech.stop()
                 return self._json({"ok": True})
+            if speech.mudo():   # voz muda: o texto segue na tela, nada é falado
+                return self._json({"ok": False, "mudo": True})
             if not speech.ready():
                 return self._json({"error": "Piper não encontrado (PIPER_BIN / PIPER_VOICE)"}, 503)
             # a question keeps the mic open (8 s, no "Ok, Fedora") once the voice has finished, so it doesn't hear itself
             then = (lambda: listener.EAR.control("listen")) if text.rstrip().endswith("?") else None
-            return self._json({"ok": speech.say(text, then)})
+            return self._json({"ok": speech.say(text, then, fila=bool(body.get("fila")))})
+
+        if p == "/api/mudo":
+            if not isinstance(body.get("mudo"), bool):
+                return self._json({"error": "mudo: true|false"}, 400)
+            return self._json({"mudo": speech.definir_mudo(body["mudo"])})
 
         if p == "/api/ear":
             action = str(body.get("action", ""))
@@ -413,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
         # after the 200 nothing may escape as an empty reply: any failure still reaches the page as error + complete
         try:
             self._turno(message, chat, emit, turno)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:   # cliente sumiu (inclui WinError 10053): nao e erro do turno
             pass
         except Exception as e:  # noqa: BLE001
             print(f"[run] {type(e).__name__}: {e}", flush=True)
@@ -426,7 +445,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _turno(self, message, chat, emit, turno):
         reg = turno.get("reg") or {}
-        cmd = None if chat else commands.handle(message, info=reg.setdefault("info", {}))
+        if chat:   # no chat so a troca de motor e local; o resto do commands.handle fica so na voz
+            mt = commands.motor_local(message)
+            cmd = dict(message=None, reply=commands._motor_resposta(*mt), note="comando") if mt else None
+        else:
+            cmd = commands.handle(message, info=reg.setdefault("info", {}))
         if reg.get("info", {}).get("filtrado"):
             reg["rota"] = "filtro_local→claude"
         if cmd:
@@ -472,15 +495,29 @@ class Handler(BaseHTTPRequestHandler):
         if hit:
             emit(dict(t="focus", id=hit))
         reply = []
+        agentes_ativos = {}   # id do tool_use -> agente, para o resultado saber de quem veio
+        emit(dict(t="etapa", fase="inicio", text=conversa.fala_etapa_inicio(message, full, motor)))
         for ev in runtime.run(prompt, SESSION["id"], commands.system_block(equipe=(full == "equipe")), full, motor):
             if ev.get("t") == "delta":
                 reply.append(ev.get("text", ""))
+            if ev.get("t") == "complete" and ev.get("motor") and ev["motor"] != motor:   # agy sem cota refeito no Claude
+                modo_sessao = (full, ev["motor"])
             if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
                 if _guarda_sessao(turno, SESSION, id=ev["session_id"], modo=modo_sessao, ultima=time.time(), turnos=SESSION["turnos"] + 1):
                     conversa.lembrar(message, "".join(reply))
-            if ev.get("t") == "error":
+            if ev.get("t") == "error" and runtime.erro_invalida_sessao(ev.get("message")):   # transitorio mantem a sessao
                 SESSION["id"] = None
+            if ev.get("t") == "tool" and ev.get("phase") == "result" and ev.get("id") in agentes_ativos:
+                ag = agentes_ativos.pop(ev["id"])
+                ev["agent"] = ag
             emit(ev)
+            if ev.get("t") == "tool" and ev.get("phase") == "use" and ev.get("agent"):
+                if ev.get("id") is not None:
+                    agentes_ativos[ev.get("id")] = str(ev["agent"])
+                emit(dict(t="etapa", fase="repasse", agent=str(ev["agent"]), text=conversa.fala_etapa_repasse(ev["agent"])))
+            if ev.get("t") == "tool" and ev.get("phase") == "result" and ev.get("agent"):
+                emit(dict(t="etapa", fase="retorno", agent=str(ev["agent"]),
+                          text=conversa.fala_etapa_retorno(ev["agent"], ok=bool(ev.get("ok", True)), escalar=bool(ev.get("escalar")))))
 
     def _chat(self, message, emit, turno):
         prompt = commands.turn_block(message) + "\n\n## Pedido\n" + message
@@ -489,7 +526,7 @@ class Handler(BaseHTTPRequestHandler):
             CHAT["id"] = None
         for ev in runtime.run(prompt, CHAT["id"], commands.system_block(chat=True), True, motor):
             if ev.get("t") == "complete" and runtime.valid_session(ev.get("session_id")):
-                _guarda_sessao(turno, CHAT, id=ev["session_id"], motor=motor)
+                _guarda_sessao(turno, CHAT, id=ev["session_id"], motor=ev.get("motor") or motor)
             emit(ev)   # an error keeps the session: the chat history is worth more than a retry from scratch
 
 
@@ -515,16 +552,75 @@ def _retro_loop():
         time.sleep(RETRO_INTERVALO)
 
 
+def info_motor(motor=None, agora=None):
+    """Informações dinâmicas do motor ativo (claude ou agy), modelo, brain e permissões."""
+    agora = agora if agora is not None else time.time()
+    motor = runtime.motor_atual(motor)
+    fixo = runtime.motor_forcado()
+    forcado = bool(fixo)
+    ate = (motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), agora)
+           if motor == "agy" and not forcado else None)
+
+    if motor == "agy":
+        try:
+            import motor_agy
+            ok, ver = motor_agy.disponivel()
+            brain = f"Antigravity {ver} — sua assinatura Google" if ok else f"Antigravity ({ver})"
+            model_voz = motor_agy.MODELO
+            model_full = motor_agy.MODELO_COMPLETO
+            perm = motor_agy.PERMISSAO
+            versao = ver if ok else "agy"
+        except Exception as e:  # noqa: BLE001
+            brain = f"Antigravity (erro: {e})"
+            model_voz = "gemini"
+            model_full = "gemini"
+            perm = "bypass"
+            versao = "agy"
+        rotulo_motor = f"agy [{'forçado' if forcado else 'auto'}]"
+        if ate:
+            rotulo_motor += f" até {motor_regra._quando(ate)}"
+        model_desc = f"{model_voz} (voz) · {model_full} (completo)"
+        kind = runtime.runtime_kind()   # o status mostra o Claude mesmo no agy (fica em cache no runtime)
+    else:
+        kind = runtime.runtime_kind()
+        versao = runtime.version()   # mesma chamada em cache: nao abre outro processo
+        brain = (f"Claude Code {versao} — sua assinatura Anthropic"
+                 if kind == "claude" else f"Claude indisponível — CLI não encontrada ({kind})")
+        model_voz = runtime.MODEL or "Claude default"
+        model_full = None
+        perm = runtime.PERMISSION
+        rotulo_motor = f"claude [{'forçado' if forcado else 'auto'}]"
+        model_desc = model_voz
+
+    motivo = (motor_regra.ULTIMO["motivo"] if not forcado else f"forcado: {fixo}"
+              if runtime.MOTOR in ("claude", "agy", "auto") or motor_regra.forcado("auto")
+              else f"FEDORA_MOTOR={runtime.MOTOR!r} invalido, usando claude")
+
+    return {
+        "motor": motor,
+        "rotulo_motor": rotulo_motor,
+        "brain": brain,
+        "model": model_desc,
+        "model_voz": model_voz,
+        "model_full": model_full,
+        "permission": perm,
+        "version": versao,
+        "kind": kind,
+        "ate": ate,
+        "forcado": forcado,
+        "motivo": motivo,
+    }
+
+
 def main():
-    kind = runtime.runtime_kind()
+    im = info_motor()
     g = memory.build_graph()
-    brain = (f"Claude Code {runtime.version()} — your subscription, no API key"
-             if kind == "claude" else "MOCK — claude CLI not reachable")
     print(f"""
   FEDORA · assistente local (toque no orbe ou Ctrl+Alt+Espaço)
   ────────────────────────────────────────────────
-  brain        {brain}
-  model        {runtime.MODEL or 'Claude default'}
+  engine       {im['rotulo_motor']}
+  brain        {im['brain']}
+  model        {im['model']}
   vault        {g['total']} notes · {len(g['links'])} links
                {g['vault']}
   voice        Piper ({os.path.basename(speech.VOICE)})
@@ -532,7 +628,7 @@ def main():
   workdir      {runtime.WORKDIR}
   open         http://localhost:{PORT}
 """, flush=True)
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv = Server(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
     if os.environ.get("FEDORA_EAR", "1") != "0":
         listener.EAR.start()
@@ -553,4 +649,126 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--teste" in sys.argv:
+        c = info_motor("claude", agora=1700000000)
+        assert c["motor"] == "claude" and "claude" in c["rotulo_motor"], c
+        assert "Claude" in c["brain"] and c["model_voz"] == "Claude default", c
+        a = info_motor("agy", agora=1700000000)
+        assert a["motor"] == "agy" and "agy" in a["rotulo_motor"], a
+        assert "Antigravity" in a["brain"] and "gemini" in a["model_voz"], a
+        # troca de motor por voz: so a frase inteira de comando; conversa comum nunca casa
+        for frase, esp in (("troca o motor pro agy", ("agy", "troca")), ("Volta pro Claude", ("claude", "troca")),
+                           ("muda pro cloud", ("claude", "troca")), ("Usa o Antigravity, por favor.", ("agy", "troca")),
+                           ("motor automático", ("auto", "troca")), ("deixa o motor em automático", ("auto", "troca")),
+                           ("fedora, passa pro agy agora", ("agy", "troca")), ("qual motor você está usando", ("", "status")),
+                           ("que motor tá ativo", ("", "status"))):
+            assert commands.motor_local(frase) == esp, (frase, commands.motor_local(frase))
+        for frase in ("usa o claude pra revisar esse arquivo", "o agy", "claude", "automático", "troca o motor", "volta pro agy e pro claude",
+                      "o claude está lento hoje", "me explica como o agy troca de motor quando o uso passa de cinquenta e cinco por cento",
+                      "qual a diferença entre o claude e o agy", "abre o claude", "", None):
+            assert commands.motor_local(frase) is None, (frase, commands.motor_local(frase))
+        import tempfile
+        _m0, _e0, _a0 = runtime.MOTOR, os.environ.get("FEDORA_MOTOR"), motor_regra.ARQUIVO
+        motor_regra.ARQUIVO = pathlib.Path(tempfile.mkdtemp()) / "motor.json"   # nunca mexe no motor.json real
+        orig_run = runtime.run
+        try:
+            r = commands.handle("troca o motor pro claude")
+            assert r["message"] is None and "Claude" in r["reply"] and runtime.motor_forcado() == "claude", r
+            assert "claude" in commands.handle("qual motor você está usando")["reply"]
+            # chat: troca de motor respondida localmente (note, delta, complete), sem chamar o modelo
+            runtime.run = lambda *a, **k: (_ for _ in ()).throw(AssertionError("chamou o modelo"))
+            runtime.definir_motor("auto")
+            ev_chat = []
+            Handler._turno(object(), "troca o motor pro claude", True, ev_chat.append, {"reg": {}, "cancelado": False})
+            assert [e["t"] for e in ev_chat] == ["note", "delta", "complete"] and "Claude" in ev_chat[1]["text"], ev_chat
+            assert runtime.motor_forcado() == "claude" and json.loads(motor_regra.ARQUIVO.read_text(encoding="utf-8"))["forcar"] == "claude"
+            ev_chat.clear()
+            Handler._turno(object(), "motor automático", True, ev_chat.append, {"reg": {}, "cancelado": False})
+            assert ev_chat[0]["t"] == "note" and runtime.motor_forcado() == "", ev_chat
+        finally:
+            runtime.run = orig_run
+            motor_regra.ARQUIVO = _a0
+            runtime.MOTOR = _m0
+            if _e0 is None:
+                os.environ.pop("FEDORA_MOTOR", None)
+            else:
+                os.environ["FEDORA_MOTOR"] = _e0
+        # teste offline do fluxo de etapas em _turno
+        evs = []
+        orig_handle, orig_run, orig_top = commands.handle, runtime.run, memory.top_match
+        try:
+            commands.handle = lambda msg, info=None: None
+            memory.top_match = lambda msg: None
+            runtime.run = lambda *a, **k: iter([
+                dict(t="tool", phase="use", id="t1", name="Bash", agent="junior", input="python agentes.py junior x"),
+                dict(t="tool", phase="result", id="t1", ok=True),
+                dict(t="delta", text="Pronto."),
+                dict(t="complete", ms=10),
+            ])
+            Handler._turno(object(), "delegue para a equipe ajustar o arquivo", False, evs.append, {"reg": {}, "cancelado": False})
+        finally:
+            commands.handle, runtime.run, memory.top_match = orig_handle, orig_run, orig_top
+        etapas = [(e["fase"], e.get("agent"), e["text"]) for e in evs if e.get("t") == "etapa"]
+        assert [x[0] for x in etapas] == ["inicio", "repasse", "retorno"], etapas
+        assert etapas[1][1] == "junior" and etapas[2][1] == "junior", etapas
+
+        # erro transitorio mantem a sessao de voz; sessao invalida zera
+        orig_handle, orig_run, orig_top, orig_cont, sid0 = commands.handle, runtime.run, memory.top_match, conversa.continua, SESSION["id"]
+        try:
+            commands.handle = lambda msg, info=None: None
+            memory.top_match = lambda msg: None
+            conversa.continua = lambda *a: True   # a sessao seria retomada; so o erro decide
+            for msg_erro, zera in (("Claude went quiet for 180s and was stopped. ", False), (runtime.CANCELLED, False),
+                                   ("No conversation found with session ID: x", True)):
+                SESSION["id"] = "1b4e28ba-2fa1-11d2-883f-0016d3cca427"
+                runtime.run = lambda *a, **k: iter([dict(t="error", message=msg_erro)])
+                Handler._turno(object(), "que horas são", False, lambda e: None, {"reg": {}, "cancelado": False})
+                assert (SESSION["id"] is None) == zera, (msg_erro, SESSION["id"])
+        finally:
+            commands.handle, runtime.run, memory.top_match, conversa.continua, SESSION["id"] = orig_handle, orig_run, orig_top, orig_cont, sid0
+
+        # cliente que caiu no meio (WinError 10053) nao grava erro no turno
+        assert issubclass(ConnectionAbortedError, ConnectionError)
+
+        class _Caiu:
+            def write(self, b):
+                raise ConnectionAbortedError(10053, "abortada")
+            flush = write
+
+        class _Falso:
+            wfile = _Caiu()
+            send_response = send_header = lambda self, *a: None
+            end_headers = lambda self: None
+            _turno = lambda self, message, chat, emit, turno: emit(dict(t="delta", text="x"))
+        t_caiu = {"cancelado": False}
+        Handler._stream(_Falso(), {"message": "oi", "canal": "chat"}, t_caiu)
+        assert "erro" not in t_caiu["reg"], t_caiu["reg"]
+
+        # /api/mudo: exige token; liga/desliga o mudo da fala; /api/speak respeita
+        import io
+
+        def _post(caminho, corpo, token=API_TOKEN):
+            raw = json.dumps(corpo).encode()
+            h = Handler.__new__(Handler)
+            h.path, h.rfile, h.wfile, h.resp = caminho, io.BytesIO(raw), io.BytesIO(), []
+            h.headers = {"Content-Length": str(len(raw)), "Host": f"127.0.0.1:{PORT}", "Origin": f"http://127.0.0.1:{PORT}",
+                         "Content-Type": "application/json", "X-Jarvis-Token": token}
+            h.send_response = lambda code: h.resp.append(code)
+            h.send_header = lambda *a: None
+            h.end_headers = lambda: None
+            h.do_POST()
+            return h.resp[0], json.loads(h.wfile.getvalue())
+        mudo0 = speech.mudo()
+        try:
+            assert _post("/api/mudo", {"mudo": True}, token="")[0] == 401 and not speech.mudo()
+            assert _post("/api/mudo", {"mudo": True}, token="errado")[0] == 401 and not speech.mudo()
+            assert _post("/api/mudo", {"mudo": "sim"})[0] == 400
+            assert _post("/api/mudo", {"mudo": True}) == (200, {"mudo": True}) and speech.mudo()
+            assert _post("/api/speak", {"text": "oi"}) == (200, {"ok": False, "mudo": True})
+            assert speech.say("oi") is False
+            assert _post("/api/mudo", {"mudo": False}) == (200, {"mudo": False}) and not speech.mudo()
+        finally:
+            speech.definir_mudo(mudo0)
+        print("server ok")
+        sys.exit(0)
     main()

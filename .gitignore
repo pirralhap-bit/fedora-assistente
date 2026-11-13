@@ -14,3 +14,4 @@ state.json
 graphify-out/
 .playwright-mcp/
 logs/
+scratchpad/

@@ -17,7 +17,7 @@ Seguranca: nenhum agente roda com permissao total. Cada um recebe so as ferramen
 curta de comandos do catalogo COMANDOS) e a lista runtime.DENY (no agy, traduzida por motor_agy.regras_deny()) vale por cima.
 Comando liberado e estreito nos dois backends: python so roda um dos AUTOTESTES (lista fechada = tools/testa.ps1), exato,
 git so status/diff/log/show sem --output, --ext-diff, --textconv, --no-index, -c, --exec-path; nenhum comando aceita aspas,
-barra invertida, $, { } nem ` (o bash juntaria `--o""utput`); ninguem redireciona saida (> <) nem usa * ? [ ] ( ) ! &. O estreito ISOLA quem nao edita (qa, argon); para quem edita (senior, flash,
+barra invertida, $, { } nem ` (o bash juntaria `--o""utput`); ninguem redireciona saida (> <) nem usa * ? [ ] ( ) ! &. O estreito ISOLA quem nao edita (qa, arquiteto); para quem edita (senior, design, writer,
 junior) a DENY e so um freio, nao um sandbox (o senior edita codigo e roda autotestes que o usam; pode mexer ate em .git/config). Agente nao chama agente (FEDORA_AGENTE no ambiente trava a recursao). Falha vira `ESCALAR: ...`.
 """
 import json
@@ -41,6 +41,7 @@ MAX_TAREFA = 20000   # caracteres; a tarefa vai na linha de comando (limite de 3
 
 # modelo do agente -> id em cada assinatura que o tem. Mude AQUI para redistribuir.
 MODELOS = {
+    "fable": {"claude": "fable"},
     "opus": {"claude": "opus"},
     "sonnet": {"claude": "sonnet"},
     "haiku": {"claude": "haiku"},
@@ -49,11 +50,25 @@ MODELOS = {
     "gemini-argon": {"agy": "gemini-4-argon-medium"},
     "gemini-argon-high": {"agy": "gemini-4-argon-high"},
 }
-# Com o agy no comando (Claude acima de 55% na semana ou em 90% na sessao de 5 h) NADA roda no Claude. Modelo que so existe
-# no Claude troca, nessa chamada, pelo equivalente do Google. (O contrario nao vale: Gemini so existe no Google e fica la.)
-# Os Claude DENTRO do agy (claude-opus-5-5-*, claude-sonnet-5-5-*) nao sao mais usados: gastam muito mais cota do agy e rendem
-# menos (medido pelo usuario em 2026-11-10). Os pares abaixo sao a hipotese inicial; tools/compara_modelos.py confirma ou muda.
-SUBSTITUTO_NO_AGY = {"haiku": "gemini-flash", "sonnet": "gemini-flash-high", "opus": "gemini-argon-high"}
+ESFORCOS = ("", "low", "medium", "high", "xhigh", "max")
+# Com o agy no comando (Claude acima de 55% na semana ou em 90% na sessao de 5 h), os modelos em SUBSTITUTO_NO_AGY
+# trocam pelo equivalente do Google. Com o agy no comando, todos os modelos do Claude passam para o Gemini.
+SUBSTITUTO_PADRAO = {"haiku": "gemini-flash", "sonnet": "gemini-flash-high", "opus": "gemini-argon-high", "fable": "gemini-argon-high"}
+
+
+def substitutos(texto=None):
+    """SUBSTITUTO_PADRAO + override de FEDORA_SUBSTITUTO_NO_AGY ("opus=gemini-argon,haiku=gemini-flash-high").
+    Par invalido (modelo de origem fora do Claude ou destino fora do agy) e ignorado: o padrao nunca piora sozinho."""
+    tab = dict(SUBSTITUTO_PADRAO)
+    texto = os.environ.get("FEDORA_SUBSTITUTO_NO_AGY", "") if texto is None else texto
+    for par in (texto or "").split(","):
+        de, _, para = (s.strip().lower() for s in par.partition("="))
+        if "claude" in MODELOS.get(de, {}) and "agy" in MODELOS.get(para, {}):
+            tab[de] = para
+    return tab
+
+
+SUBSTITUTO_NO_AGY = substitutos()
 
 # Catalogo do cabecalho `comandos:` (nada fora dele: carrega() recusa). Cada item vira regra estreita nos dois backends.
 GIT_SUB = ("status", "diff", "log", "show")
@@ -62,8 +77,9 @@ COMANDOS = tuple(f"git {s}" for s in GIT_SUB) + PYTHONS
 # python NAO roda qualquer .py: so estes pares (script, argumentos), exatamente os autotestes offline de tools/testa.ps1
 # (o --teste confere que as duas listas sao iguais). Fora daqui: pip/cProfile/zipfile pela Lib, retro.py --agora, tidy.py --gemini...
 AUTOTESTES = (
-    ("conversa.py",), ("runtime.py",), ("motor_agy.py",), ("motor_regra.py",), ("agentes.py", "--teste"), ("listener.py",),
-    ("vad.py",), ("llm.py", "--teste"), ("notes.py", "--teste"), ("tidy.py",), ("turnolog.py", "--teste"), ("retro.py", "--teste"),
+    ("conversa.py",), ("runtime.py",), ("motor_agy.py",), ("motor_regra.py",), ("agentes.py", "--teste"),
+    ("despachante.py", "--teste"), ("server.py", "--teste"), ("listener.py",), ("speech.py",), ("vad.py",),
+    ("llm.py", "--teste"), ("notes.py", "--teste"), ("tidy.py",), ("turnolog.py", "--teste"), ("retro.py", "--teste"),
     ("atalhos.py", "--teste-filtro"), ("whisper_server.py", "--teste"), ("orb.py", "--teste"), ("memory.py",))
 # formas aceitas do executavel de cada item do catalogo. So barra normal: a invertida e proibida nos dois backends (o bash a
 # come como escape, entao `.venv\Scripts\python.exe` nem roda no Bash; e `\-\-output` furava o deny do git).
@@ -116,12 +132,16 @@ def carrega(nome):
     modelo = campos.get("modelo", "")
     if modelo not in MODELOS:
         raise ValueError(f"{arq.name}: modelo {modelo!r} nao existe em MODELOS")
+    esforco = campos.get("esforco", "").strip().lower()
+    if esforco not in ESFORCOS:
+        raise ValueError(f"{arq.name}: esforco {esforco!r} invalido (aceitos: {', '.join(ESFORCOS[1:])})")
     comandos = [c.strip() for c in campos.get("comandos", "").split(",") if c.strip()]
     fora = [c for c in comandos if c not in COMANDOS]
     if fora:
         raise ValueError(f"{arq.name}: comandos fora do catalogo {fora} (aceitos: {', '.join(COMANDOS)})")
-    return dict(nome=nome, nivel=campos.get("nivel", ""), modelo=modelo, edita=campos.get("edita", "nao") == "sim",
-                comandos=comandos, descricao=campos.get("descricao", ""), instrucoes=corpo)
+    return dict(nome=nome, nivel=campos.get("nivel", ""), modelo=modelo, esforco=esforco,
+                edita=campos.get("edita", "nao") == "sim", comandos=comandos,
+                descricao=campos.get("descricao", ""), instrucoes=corpo)
 
 
 def todos():
@@ -139,12 +159,9 @@ def _instalado(backend):
 
 
 def _motor_do_estado():
-    """Fora de um turno (CLI na mao): o estado gravado pela regra de troca (com o limite de 8 dias); sem espera, o Claude.
-    FEDORA_MOTOR=claude|agy forca o motor e ignora a regra (como no runtime)."""
-    if runtime.MOTOR != "auto":   # forcado; valor invalido cai no Claude, como runtime.motor_atual()
-        return runtime.MOTOR if runtime.MOTOR in ("claude", "agy") else "claude"
-    import motor_regra
-    return "agy" if motor_regra.espera_ativa(motor_regra._le(motor_regra.ARQUIVO), time.time()) is not None else "claude"
+    """Fora de um turno (CLI na mao): quem decide e runtime.motor_atual() (motor fixo do motor.json > FEDORA_MOTOR >
+    espera gravada pela regra; sem espera, o Claude)."""
+    return runtime.motor_atual()
 
 
 def rota(ag, turno=None):
@@ -223,14 +240,48 @@ def _ferramentas_claude(ag):
     return t
 
 
+def _pasta_backlog():
+    """Pasta `backlog` do cofre, se existir: liberada em --add-dir para leitura das atividades do despachante."""
+    for var in ("COFRE", "JARVIS_VAULT"):
+        v = os.environ.get(var, "").strip()
+        if v:
+            p = pathlib.Path(v).expanduser() / "backlog"
+            if p.is_dir():
+                return p.resolve()
+    try:
+        import memory
+        p = memory.VAULT / "backlog"
+        if p.is_dir():
+            return p.resolve()
+    except Exception:
+        pass
+    return None
+
+
+def _pastas_extras():
+    """Pastas extras liberadas em --add-dir: `backlog` do cofre (atividades do despachante) e `acervo-skills`."""
+    out = []
+    b = _pasta_backlog()
+    if b:
+        out.append(b)
+    s = pathlib.Path.home() / ".claude" / "acervo-skills"
+    if s.is_dir():
+        out.append(s.resolve())
+    return out
+
+
 def monta_claude(ag, modelo_id):
     """A tarefa NAO vai aqui: vai por stdin (a lista DENY ja ocupa ~14 mil dos 32 mil caracteres da linha de comando)."""
     cmd = runtime._claude_base() + [
         "-p", "--output-format", "json", "--model", modelo_id,
+        *(["--effort", ag["esforco"]] if ag.get("esforco") else []),
         "--append-system-prompt", ag["instrucoes"], "--no-session-persistence", "--disable-slash-commands",
+        "--strict-mcp-config",  # sem os conectores MCP da conta (Gmail, Drive...): ~17k tokens e ferramentas que o agente nao usa
         "--settings", json.dumps({"enabledPlugins": {"ponytail@ponytail": False}}),
         "--tools", ",".join(_ferramentas_claude(ag)),
         "--permission-mode", "acceptEdits" if ag["edita"] else "default"]
+    for p in _pastas_extras():
+        cmd += ["--add-dir", str(p)]
     allow, deny = regras_claude(ag)
     if allow:
         cmd += ["--allowedTools", *allow]
@@ -269,6 +320,9 @@ def monta_agy(ag, tarefa, modelo_id, settings):
     cmd = motor_agy._agy_base() + [
         "-p", f"{ag['instrucoes']}\n\n{aviso_headless_agy(ag)}\n\n## Tarefa\n{tarefa}", "--output-format", "json", "--model", modelo_id,
         "--mode", "accept-edits" if ag["edita"] else "plan", "--settings", str(settings), "--print-timeout", f"{TIMEOUT}s"]
+    b = _pasta_backlog()
+    if b:
+        cmd += ["--add-dir", str(b)]
     # MEDIDO (agy 1.5.3, 2026-11-09): com --disable-slash-commands o --mode plan NAO tem efeito (um agente que so le criou arquivo).
     # Quem so le roda SEM a flag (e ainda com o deny write_file(*): medido que nao cria nem edita arquivo existente e termina com
     # resposta). Quem edita mantem a flag: medido que, com ou sem ela, o comando fora da lista e negado e a edicao funciona.
@@ -372,6 +426,11 @@ def listar():
 
 
 def main(argv):
+    for _s in (sys.stdout, sys.stderr):   # saida redirecionada no Windows vem em cp1252: a resposta nao pode quebrar no print
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
     if argv and argv[0] == "--teste":
         return _teste()
     if not argv or argv[0] in ("listar", "-l", "--listar"):
@@ -413,12 +472,22 @@ def _teste_corpo():
     global LOG, TIMEOUT
     import motor_agy
     import motor_regra
+    # SUBSTITUTO_NO_AGY configuravel: padrao intacto (opus/fable -> Argon high), override valido aplica, invalido ignora
+    assert substitutos("") == SUBSTITUTO_PADRAO and SUBSTITUTO_PADRAO["opus"] == "gemini-argon-high"
+    assert substitutos("opus=gemini-argon, haiku=gemini-flash-high")["opus"] == "gemini-argon"
+    assert substitutos("opus=sonnet,xyz=gemini-flash,haiku=")["opus"] == "gemini-argon-high"
+    assert substitutos("opus=sonnet,haiku=")["haiku"] == "gemini-flash"
 
     # definicoes: todas carregam, modelos existem, EQUIPE.md cita cada uma com o modelo certo
     ags = {a["nome"]: a for a in todos()}
-    assert set(ags) >= {"junior", "senior", "qa", "flash", "argon"}, ags.keys()
-    assert ags["qa"]["modelo"] == "opus" and not ags["qa"]["edita"] and ags["senior"]["modelo"] == "opus"
-    assert ags["flash"]["modelo"] == "gemini-flash" and ags["argon"]["modelo"] == "gemini-argon" and not ags["argon"]["edita"]
+    assert set(ags) >= {"junior", "writer", "design", "arquiteto", "senior", "qa", "techlead"}, ags.keys()
+    assert ags["qa"]["modelo"] == "opus" and not ags["qa"]["edita"]
+    assert ags["senior"]["modelo"] == "opus" and ags["senior"]["edita"]
+    assert ags["techlead"]["modelo"] == "gemini-flash-high" and not ags["techlead"]["edita"]
+    assert ags["writer"]["modelo"] == "gemini-flash" and ags["junior"]["modelo"] == "sonnet" and ags["junior"]["esforco"] == "medium"
+    assert ags["senior"]["esforco"] == "low"
+    assert ags["design"]["modelo"] == "sonnet" and ags["design"]["edita"]
+    assert ags["arquiteto"]["modelo"] == "opus" and ags["arquiteto"]["esforco"] == "high" and not ags["arquiteto"]["edita"]
     equipe = (RAIZ / "docs" / "EQUIPE.md").read_text(encoding="utf-8")
     for a in ags.values():
         assert f"`{a['nome']}`" in equipe, f"EQUIPE.md nao cita {a['nome']}"
@@ -459,15 +528,19 @@ def _teste_corpo():
 
     # roteamento
     runtime.MOTOR = "auto"   # o teste nao depende do FEDORA_MOTOR de quem roda
-    assert rota(ags["junior"], "claude")[:2] == ("claude", "haiku")    # Haiku so existe no Claude
-    assert rota(ags["junior"], "agy")[:2] == ("agy", "gemini-3.8-flash-low")   # ...mas com o agy no comando nada roda no Claude
-    assert rota(ags["flash"], "claude")[0] == "agy"           # Gemini so existe no Google, mesmo com o turno no Claude
-    for nome_ in ags:                                         # regra de troca: turno no agy => nenhum agente toca o Claude
-        assert rota(ags[nome_], "agy")[0] == "agy", nome_
-    assert rota(ags["argon"])[1] == "gemini-4-argon-medium"
+    assert rota(ags["design"], "claude")[:2] == ("claude", "sonnet")
+    assert rota(ags["design"], "agy")[:2] == ("agy", "gemini-3.8-flash-high")
+    assert rota(ags["writer"], "claude")[0] == "agy" and rota(ags["junior"], "claude")[:2] == ("claude", "sonnet")   # Gemini so existe no Google, mesmo com o turno no Claude
+    for nome_ in ags:                                         # turno no agy: todos rodam no agy
+        assert rota(ags[nome_], "agy")[0] == "agy", (nome_, rota(ags[nome_], "agy"))
+    assert rota(ags["senior"], "claude")[:2] == ("claude", "opus")
+    assert rota(ags["senior"], "agy")[:2] == ("agy", "gemini-4-argon-high")
+    assert rota(ags["techlead"], "agy")[:2] == ("agy", "gemini-3.8-flash-high") and rota(ags["techlead"], "claude")[:2] == ("agy", "gemini-3.8-flash-high")
+    assert rota(ags["arquiteto"], "claude")[:2] == ("claude", "opus") and rota(ags["arquiteto"], "agy")[:2] == ("agy", "gemini-4-argon-high")
     assert rota(ags["qa"], "claude")[:2] == ("claude", "opus") and rota(ags["qa"], "agy")[:2] == ("agy", "gemini-4-argon-high")
     os.environ["FEDORA_MOTOR_TURNO"] = "agy"
-    assert rota(ags["senior"])[0] == "agy"                    # turno no agy pelo ambiente: Opus vira Argon
+    assert rota(ags["senior"])[0] == "agy"
+    assert rota(ags["qa"])[0] == "agy"
     del os.environ["FEDORA_MOTOR_TURNO"]
     assert rota(ags["qa"])[0] == "claude"                     # sem turno e sem espera gravada: Claude
     motor_regra._grava(motor_regra.ARQUIVO, {"motor": "agy", "ate": time.time() + 3600})
@@ -479,10 +552,14 @@ def _teste_corpo():
     runtime.MOTOR = "auto"
     motor_regra._grava(motor_regra.ARQUIVO, {"motor": "agy", "ate": time.time() - 1})
     assert rota(ags["qa"])[0] == "claude"                     # espera vencida
+    motor_regra.definir_forcado("agy")                        # "troca o motor pro agy" dito no servidor vale aqui tambem
+    assert _motor_do_estado() == "agy" and rota(ags["qa"])[0] == "agy"
+    motor_regra.definir_forcado("auto")
+    assert _motor_do_estado() == "claude"
 
-    # todo modelo so do Claude tem substituto no agy, e o substituto existe no Google
+    # todo modelo so do Claude (exceto fable, que nenhum agente usa hoje) tem substituto no agy, e o substituto existe no Google
     for m_, ids_ in MODELOS.items():
-        if list(ids_) == ["claude"]:
+        if list(ids_) == ["claude"] and m_ != "fable":
             sub_ = SUBSTITUTO_NO_AGY.get(m_)
             assert sub_ in MODELOS and "agy" in MODELOS[sub_], (m_, sub_)
     # agy no turno (ex.: Claude em 56% na semana): haiku/sonnet/opus viram Gemini; agy ausente => erro, nunca o Claude
@@ -526,8 +603,11 @@ def _teste_corpo():
         (set(pares_ps) ^ set(AUTOTESTES))
     j = monta_claude(ags["junior"], "haiku")
     assert j[j.index("--tools") + 1] == "Read,Glob,Grep,Edit,Write" and j[j.index("--permission-mode") + 1] == "acceptEdits" and "--allowedTools" not in j
-    for cmd in (c, j, monta_claude(ags["senior"], "opus")):
+    s_cmd = monta_claude(ags["senior"], "opus")
+    assert s_cmd[s_cmd.index("--model") + 1] == "opus"
+    for cmd in (c, j, s_cmd):
         assert "bypassPermissions" not in cmd and "--dangerously-skip-permissions" not in cmd
+        assert "--strict-mcp-config" in cmd and "--mcp-config" not in cmd, "agente sobe sem MCP"
         assert len(subprocess.list2cmdline(cmd)) < 30000, len(subprocess.list2cmdline(cmd))
         assert "x" * 50 not in " ".join(cmd)   # a tarefa nao esta na linha de comando
 
@@ -633,8 +713,8 @@ def _teste_corpo():
     for barrado in ('python -c "import os; os.environ.pop(\'FEDORA_AGENTE\')"', "python -m x", "git diff --output=x", "git show HEAD"):
         assert not claude_ok(sr, barrado) and not agy_ok(sr, barrado), ("senior", barrado)   # senior: mesmas regras (sem git show)
     assert claude_ok(sr, "python runtime.py") and agy_ok(sr, "git log -3")
-    assert len(cfg["deny"]) >= 50 and not json.loads(pathlib.Path(settings_agy(ags["argon"], tmp / "s_ar.json")).read_text(encoding="utf-8"))["permissions"]["allow"]
-    assert regras_agy(ags["argon"]) == ([], ["write_file(*)"]) and regras_claude(ags["junior"]) == ([], [])   # argon: sem comando, mas so le
+    assert len(cfg["deny"]) >= 50 and not json.loads(pathlib.Path(settings_agy(ags["arquiteto"], tmp / "s_ar.json")).read_text(encoding="utf-8"))["permissions"]["allow"]
+    assert regras_agy(ags["arquiteto"]) == ([], ["write_file(*)"]) and regras_claude(ags["junior"]) == ([], [])   # arquiteto: sem comando, mas so le
 
     # cabecalho `comandos:` fora do catalogo: o agente nao carrega
     pasta_real = PASTA
@@ -665,57 +745,57 @@ def _teste_corpo():
     assert len(subprocess.list2cmdline(monta_agy(ags["senior"], "x" * MAX_TAREFA, "gemini-4-argon-high", sj))) < 30000   # tarefa maxima no agy cabe
     a = monta_agy(ags["qa"], "revise", "gemini-4-argon-high", sj)
     assert "--disable-slash-commands" not in a, "qa no agy: com a flag o --mode plan nao vale (medido) e o agente grava arquivo"
-    assert "--disable-slash-commands" not in monta_agy(ags["argon"], "x", "gemini-4-argon-medium", sj)
-    assert "--disable-slash-commands" in monta_agy(ags["flash"], "x", "gemini-3.8-flash-low", sj)   # quem edita mantem (accept-edits)
-    for nome_, quer in (("qa", True), ("argon", True), ("flash", False), ("senior", False), ("junior", False)):
+    assert "--disable-slash-commands" not in monta_agy(ags["arquiteto"], "x", "gemini-4-argon-medium", sj)
+    assert "--disable-slash-commands" in monta_agy(ags["writer"], "x", "gemini-3.8-flash-low", sj)   # quem edita mantem (accept-edits)
+    for nome_, quer in (("qa", True), ("arquiteto", True), ("writer", False), ("design", False), ("senior", False), ("junior", False)):
         deny_ = json.loads(pathlib.Path(settings_agy(ags[nome_], tmp / f"s_{nome_}.json")).read_text(encoding="utf-8"))["permissions"]["deny"]
         assert ("write_file(*)" in deny_) == quer, (nome_, quer)   # so quem nao edita ganha o deny de escrita
-    aviso_qa, aviso_ar = aviso_headless_agy(ags["qa"]), aviso_headless_agy(ags["argon"])
+    aviso_qa, aviso_ar = aviso_headless_agy(ags["qa"]), aviso_headless_agy(ags["arquiteto"])
     assert "ENCERRA" in aviso_qa and "git diff" in aviso_qa and "runtime.py" in aviso_qa and "llm.py --teste" in aviso_qa, aviso_qa
     assert "nenhum comando de shell" in aviso_ar and aviso_qa in a[a.index("-p") + 1]
     assert a[a.index("--mode") + 1] == "plan" and a[a.index("--model") + 1] == "gemini-4-argon-high" and "--dangerously-skip-permissions" not in a
-    assert monta_agy(ags["flash"], "ajuste", "gemini-3.8-flash-low", sj)[monta_agy(ags["flash"], "x", "m", sj).index("--mode") + 1] == "accept-edits"
+    assert monta_agy(ags["writer"], "ajuste", "gemini-3.8-flash-low", sj)[monta_agy(ags["writer"], "x", "m", sj).index("--mode") + 1] == "accept-edits"
 
     # execucao com os fakes
-    r = executa(ags["junior"], "ajuste", "claude")
+    r = executa(ags["design"], "ajuste", "claude")
     assert r["ok"] and r["texto"] == "feito pelo claude" and r["assinatura"] == "claude" and r["tokens_in"] == 60 and r["tokens_out"] == 3, r
-    assert json.loads(grava.read_text(encoding="utf-8"))["agente"] == "junior"       # FEDORA_AGENTE chega no filho (trava a recursao)
+    assert json.loads(grava.read_text(encoding="utf-8"))["agente"] == "design"       # FEDORA_AGENTE chega no filho (trava a recursao)
     os.environ["FAKE_TIPO"] = "agy"
-    r = executa(ags["flash"], "ajuste", "claude")
+    r = executa(ags["writer"], "ajuste", "claude")
     assert r["ok"] and r["texto"] == "feito pelo agy" and r["assinatura"] == "agy" and r["tokens_in"] == 100, r
     r = executa(ags["qa"], "revise", "agy")
     assert r["ok"] and r["assinatura"] == "agy" and r["modelo"] == "gemini-4-argon-high", r
     for modo, esperado in (("erro", "SUCCESS"), ("sai1", "boom")):
         os.environ["FAKE_MODO"] = modo
-        r = executa(ags["flash"], "x", "agy")
+        r = executa(ags["writer"], "x", "agy")
         assert not r["ok"] and r["erro"], (modo, r)
     os.environ["FAKE_TIPO"] = "claude"
     os.environ["FAKE_MODO"] = "erro"
-    r = executa(ags["junior"], "x")
+    r = executa(ags["design"], "x")
     assert not r["ok"] and "falhou" in r["erro"], r
     os.environ["FAKE_MODO"] = "dorme"
     t0 = time.monotonic()
-    r = executa(ags["junior"], "x", timeout=2)
+    r = executa(ags["design"], "x", timeout=2)
     assert not r["ok"] and "sem resposta" in r["erro"] and time.monotonic() - t0 < 20, r
     os.environ["FAKE_MODO"] = "ok"
-    r = executa(ags["junior"], "x" * (MAX_TAREFA + 1))
+    r = executa(ags["design"], "x" * (MAX_TAREFA + 1))
     assert not r["ok"] and "grande demais" in r["erro"], r
     # dentro do MAX_TAREFA, mas a linha estoura depois do escape do Windows (cada " vira \"): recusa antes de lancar o agy
-    r = executa(ags["flash"], '"' * 15000, "agy")
+    r = executa(ags["writer"], '"' * 15000, "agy")
     assert not r["ok"] and "grande demais" in r["erro"] and "linha de comando" in r["erro"], r
     # agy/claude que resolve para .cmd/.bat: recusa (o cmd.exe reinterpretaria & e " da tarefa)
     cmd_falso = tmp / "agy.cmd"
     cmd_falso.write_text("@echo off\n", encoding="utf-8")
     agy_antes = os.environ["AGY_CMD"]
     os.environ["AGY_CMD"] = str(cmd_falso).replace("\\", "/")
-    r = executa(ags["flash"], "ajuste & del x", "agy")
+    r = executa(ags["writer"], "ajuste & del x", "agy")
     assert not r["ok"] and ".cmd" in r["erro"], r
     os.environ["CLAUDE_CMD"], claude_antes = os.environ["AGY_CMD"], os.environ["CLAUDE_CMD"]
-    r = executa(ags["junior"], "ajuste", "claude")
+    r = executa(ags["design"], "ajuste", "claude")
     assert not r["ok"] and ".cmd" in r["erro"], r
     os.environ["AGY_CMD"], os.environ["CLAUDE_CMD"] = agy_antes, claude_antes
     linhas = [json.loads(x) for x in LOG.read_text(encoding="utf-8").splitlines()]
-    assert len(linhas) >= 7 and {x["agente"] for x in linhas} >= {"junior", "flash", "qa"} and all("ts" in x and "ok" in x for x in linhas), linhas
+    assert len(linhas) >= 7 and {x["agente"] for x in linhas} >= {"design", "writer", "qa"} and all("ts" in x and "ok" in x for x in linhas), linhas
 
     # recursao: dentro de um agente nao chama outro; CLI ruim e tratada
     os.environ["FEDORA_AGENTE"] = "senior"
@@ -728,7 +808,7 @@ def _teste_corpo():
     bloco = commands.system_block(equipe=True)
     assert "{AGENTES}" not in bloco and "agentes.py" in bloco and "{AGENTES}" not in commands.system_block()
     assert "agentes.py" not in commands.system_block(), "fora do modo equipe o prompt nao fala de agentes"
-    assert runtime.delegacao_em(f'{commands.comando_agentes()} flash "ajuste"')[0] == "flash"
+    assert runtime.delegacao_em(f'{commands.comando_agentes()} writer "ajuste"')[0] == "writer"
     print("agentes ok")
     return 0
 
