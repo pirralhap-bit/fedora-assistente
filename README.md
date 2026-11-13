@@ -43,9 +43,12 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 - **`#notas`** (na URL da janela): página de notas diárias. Voz lá: "ditar", "organizar", "salvar", "voltar", "desfazer". O resto vai para o Claude.
 - **`#chat`**: conversa digitada, estilo Claude Code (Enter envia, Shift+Enter quebra linha).
 - **Modo leve (padrão)**: poucas ferramentas, contexto pequeno. "A fundo", "modo analista", "modo completo" ou os gatilhos de B3 ("modo b3", "day trade", "operar na b3", "boleta b3") no pedido ligam o Claude Code completo (skills, PowerShell etc.). `FEDORA_MODO_LEVE=0` deixa sempre completo.
-- **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha a ferramenta Agent e o mapa de `docs/EQUIPE.md` (subagentes em `agentes/`: writer, junior, design, arquiteto, senior, qa; chamados por `agentes.py`; "writer", "design" e "arquiteto" também são gatilhos). Só na voz: o `#chat` roda sempre em modo completo e não passa por comandos nem atalhos. Custa cerca de 2,8 mil tokens a mais por turno.
+- **Modo equipe**: se o pedido tem "equipe", "delegue", "delegar", "júnior", "sênior", "revisor", "peça ao QA", "mande o QA" ou "passe pro QA", o Claude ganha o mapa de `docs/EQUIPE.md` e chama a equipe pelo shell com `agentes.py <agente> "<tarefa>"`, sem a ferramenta Agent, com as mesmas ferramentas do modo leve (subagentes em `agentes/`: writer, junior, design, arquiteto, senior, qa; "writer", "design" e "arquiteto" também são gatilhos). Só na voz: o `#chat` roda sempre em modo completo e não passa por comandos nem atalhos (exceto a troca de motor). Custa cerca de 2,8 mil tokens a mais por turno.
 - **Resposta longa**: o que vem depois de uma linha `---` fica só na tela; só a parte antes dela é falada.
 - **Motor Google (agy)**: com o Claude acima de 55% na semana ou em 90% na sessão de 5 h, o Antigravity assume (detalhes em `docs/MOTORES.md`); a tela mostra "Google (Antigravity) conectado, motor principal" e "Claude em pausa até <reset>", e um agente sem o agy instalado falha com erro em vez de usar o Claude.
+- **Trocar o motor por voz ou chat**: "troca o motor pro agy", "volta pro claude", "motor automático" ou "qual motor está usando?" (`commands.motor_local`) são resolvidos localmente, sem gastar turno do modelo. A escolha passa por `runtime.definir_motor`, que grava em `motor.json` (`motor_regra.py`, dono único): vale para servidor, `agentes.py` e despachante e sobrevive a reinício; "automático" volta à regra de 55%/90%.
+- **Fala em etapas** (voz): antes de responder ela diz o que vai fazer ("Entendido, consultando o seu cofre."), e avisa quando repassa a tarefa a um agente e quando recebe o retorno (`conversa.fala_etapa_*`).
+- **Erro passageiro** na voz (timeout ocioso, rede, cota, sobrecarga) não zera a sessão do Claude; sessão inválida ou erro desconhecido zera (`runtime.erro_invalida_sessao`).
 - **Linha do tempo de agentes**: quando há delegação, a interface mostra quem recebeu o pedido, quais subagentes foram acionados e o que cada um usou.
 - Atalhos rápidos sem Claude (hora, data, abrir app/jogo/site/pasta, volume, mídia, print, timer, clima, sistema): ver `atalhos.md`.
 
@@ -53,15 +56,16 @@ Sobe `server.py` (porta 8720, que também sobe o ouvido, o buraco negro flutuant
 
 | Arquivo | O que faz |
 |---|---|
-| `motor_regra.py` | qual motor responde o turno (Claude, ou agy acima de 55% na semana / 90% na sessão de 5 h); estado em `motor.json` |
+| `motor_regra.py` | qual motor responde o turno (Claude, ou agy acima de 55% na semana / 90% na sessão de 5 h); dono único do estado em `motor.json`, inclusive o motor fixado por comando |
 | `motor_agy.py` | motor Google (Antigravity, `agy`): mesmo contrato do `runtime.py`, `DENY` traduzida para `permissions.deny` |
-| `agentes.py` + `agentes/*.md` | equipe de subagentes independente do motor (writer, junior, design, arquiteto, senior, qa), cada um com o seu pacote de skills |
+| `agentes.py` + `agentes/*.md` | equipe de subagentes independente do motor (writer, junior, design, arquiteto, senior, qa, techlead), cada um com o seu modelo, esforço e pacote de skills: writer `gemini-flash`, junior `sonnet` (esforço medium), design `sonnet`, arquiteto `opus` (esforço high), senior `opus` (esforço low), qa `opus`, techlead `gemini-flash-high` |
+| `despachante.py` | backlog no cofre (`backlog/<projeto>/[<grupo>/]NNNN-slug.md`, cofre em `COFRE` ou `JARVIS_VAULT`): techlead tria, o dev executa, o qa revisa; falha passageira (rede, cota, 529) não bloqueia o card até 3 seguidas (`MAX_TRANSITORIAS`). `--uma-vez` varre e sai; `--teste` é offline. `resumo_backlog()` (só leitura) alimenta o Quadro & Backlog da UI via `/api/backlog` |
 | `dupla.py` | terminal único (`dupla`) com as duas assinaturas, mesma regra e mesmas travas |
 | `contexto.py` + `docs/CONTEXTO-AGY.md` | cache manual de contexto: abre a primeira mensagem de cada sessão nova do agy |
-| `server.py` | servidor HTTP local (`/api/*` e a UI); só aceita `localhost`, exige token nos POST; decide a rota do turno, grava o registro e sobe o resto |
-| `runtime.py` | chama `claude -p` em stream; `DENY` e regras de segredo; modos leve/equipe/completo |
-| `commands.py` | `/comandos`, regras do PC (`PC_RULES`), bloco de sistema do prompt, lê `docs/EQUIPE.md` no modo equipe |
-| `conversa.py` | sessão do Claude (janela de 900 s, máx. 10 turnos) e escolha do modo (leve/equipe/completo) |
+| `server.py` | servidor HTTP local (`/api/*` e a UI); só aceita `localhost`, exige token nos POST; decide a rota do turno, grava o registro e sobe o resto; ignora conexão que o navegador derruba no meio do pedido (WinError 10053/10054) |
+| `runtime.py` | chama `claude -p` em stream; `DENY` e regras de segredo; modos leve/equipe/completo; `definir_motor` (troca de motor) |
+| `commands.py` | `/comandos`, troca de motor por voz/chat (`motor_local`), regras do PC (`PC_RULES`), bloco de sistema do prompt, lê `docs/EQUIPE.md` no modo equipe |
+| `conversa.py` | sessão do Claude (janela de 900 s, máx. 10 turnos), escolha do modo (leve/equipe/completo) e frases da fala em etapas |
 | `memory.py` | lê o vault Obsidian como grafo de notas; ignora notas com `fedora-log: true` |
 | `atalhos.py` + `atalhos.md` | pedidos rápidos sem Claude: filtro local, depois o Gemini escolhe o atalho e o código executa |
 | `llm.py` | API do Gemini (JSON) com disjuntor: depois de uma falha, o atalho rápido fica 5 min fora e tudo vai direto ao Claude |
@@ -125,3 +129,7 @@ Antes de qualquer chamada ao Gemini, `atalhos.pode_ir_ao_gemini(pedido)` decide,
 Se a política de execução bloquear: `powershell -ExecutionPolicy Bypass -File tools\testa.ps1`.
 
 Roda os autotestes offline de cada módulo e sai com código diferente de zero se algum falhar. Não chama o Gemini nem o Claude. `python atalhos.py` (completo) e `python tidy.py --gemini` usam o Gemini de verdade e ficam fora; rode à mão quando quiser.
+
+## Licença
+
+MIT, veja [LICENSE](LICENSE).
