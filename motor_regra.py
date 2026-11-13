@@ -12,13 +12,15 @@ estouram, ate o reset da mais longa). Passou o reset, volta para o Claude e o us
 proxima pergunta informar o novo. Com o agy no comando, nada roda no Claude: nem os agentes (agentes.py).
 
 - uso desconhecido (servidor recem-iniciado, ainda sem pergunta ao Claude) ou janela ja resetada: Claude;
-- o uso do agy NAO entra na regra (decisao do usuario, 2026-11-09): o agy e so o motor de economia;
+- o uso do agy NAO entra na regra (decisao do usuario, 2026-11-09): o agy e so o motor de economia; excecao (2026-11-12):
+  o comando "o agy esta sem cota" grava "agy_bloqueado_ate" (bloquear_agy) e, ate esse instante, a regra fica no Claude;
 - agy nao instalado: continua no Claude (nunca troca para um motor que nao existe);
 - reset invalido (nao numerico ou em milissegundos, > 1e11) segura 12 h; nenhum reset, lido ou gravado, passa de agora + 8 dias.
 
 "No agy ate o reset" fica gravado em arquivo: o dado do Claude so reaparece depois da 1a pergunta ao Claude, e um
 reinicio do servidor nao pode devolver a conversa ao Claude no meio da espera.
-`FEDORA_MOTOR=claude|agy` no .env forca um motor e ignora esta regra; `auto` (padrao) usa a regra.
+Motor fixo (forcado()/definir_forcado()): o campo "forcar" do motor.json (comando "troca o motor pro agy" por voz/chat;
+"motor automatico" limpa) vence `FEDORA_MOTOR=claude|agy` do .env (padrao de boot), que vence esta regra (`auto`).
 """
 import json
 import os
@@ -30,10 +32,12 @@ LIMITE = float(os.environ.get("FEDORA_MOTOR_LIMITE", "0.55"))              # sem
 LIMITE_SESSAO = float(os.environ.get("FEDORA_MOTOR_LIMITE_SESSAO", "0.90"))  # sessao de 5 h: "em 90%" (90% ja conta)
 ESPERA_SEM_RESET = 12 * 3600   # uso alto mas sem horario de reset conhecido: segura o agy por 12 h
 ESPERA_MAX = 8 * 24 * 3600     # nenhum reset (lido ou gravado) vale mais que agora + 8 dias: um `ate` absurdo nao prende o agy
-RESET_MAX_EPOCH = 1e11         # acima disso e milissegundo (ou lixo), nao segundo: reset invalido
+BLOQUEIO_PADRAO = 2 * 3600     # "o agy esta sem cota" sem reset conhecido: bloqueia o agy por 2 h
+RESET_MAX_EPOCH = 1e11        # acima disso e milissegundo (ou lixo), nao segundo: reset invalido
 
 _LOCAL = pathlib.Path(os.environ.get("LOCALAPPDATA") or pathlib.Path.home() / ".local" / "state") / "fedora-assistente"
 ARQUIVO = pathlib.Path(os.environ.get("FEDORA_MOTOR_ESTADO") or _LOCAL / "motor.json")
+_ARQUIVO_PADRAO = ARQUIVO
 ULTIMO = {"motor": "claude", "motivo": "primario"}   # a ultima decisao, para o /api/status
 
 
@@ -114,6 +118,40 @@ def _grava(arquivo, estado):
         pass   # perder o arquivo so custa a memoria da espera, nunca a resposta
 
 
+# Cache do uso do Claude compartilhado entre processos (servidor, agentes.py do despachante, dupla).
+# Formato de limites.json (fica ao lado do motor.json; FEDORA_LIMITES troca o caminho):
+#   {"em": <epoch s da gravacao>, "janelas": {"seven_day": {"used": 0.0-1.0, "resets": <epoch s>},
+#                                             "five_hour": {"used": ..., "resets": ...}}}
+# Janela ja resetada nao e apagada aqui: _decidir descarta o uso quando resets <= agora.
+JANELAS = ("seven_day", "five_hour")
+
+
+def limites_arquivo(arquivo=None):
+    if arquivo is None and ARQUIVO == _ARQUIVO_PADRAO and os.environ.get("FEDORA_LIMITES"):
+        return pathlib.Path(os.environ["FEDORA_LIMITES"])   # so no caminho real: teste que troca ARQUIVO fica isolado
+    return pathlib.Path(arquivo or ARQUIVO).with_name("limites.json")
+
+
+def carrega_limites(destino, arq=None):
+    """Poe em `destino` (dict, ex.: runtime.LIMITS) as janelas gravadas. Devolve quando foram observadas (epoch) ou 0."""
+    d = _le(arq or limites_arquivo())
+    janelas = d.get("janelas") if isinstance(d.get("janelas"), dict) else {}
+    for nome in JANELAS:
+        w = janelas.get(nome)
+        if isinstance(w, dict):
+            destino[nome] = dict(used=w.get("used"), resets=w.get("resets"))
+    em = d.get("em")
+    return em if isinstance(em, (int, float)) and not isinstance(em, bool) else 0
+
+
+def grava_limites(limits, arq=None, agora=None):
+    """Grava as janelas de `limits` (atomico; falha de disco e ignorada). Nada a gravar: nao toca no arquivo."""
+    janelas = {n: dict(used=limits[n].get("used"), resets=limits[n].get("resets"))
+               for n in JANELAS if isinstance((limits or {}).get(n), dict)}
+    if janelas:
+        _grava(arq or limites_arquivo(), {"em": time.time() if agora is None else agora, "janelas": janelas})
+
+
 _TRAVA = threading.Lock()   # /api/status (thread HTTP) e o turno (outra thread) chamam decidir() ao mesmo tempo
 
 
@@ -125,9 +163,13 @@ def decidir(limits, agora=None, arquivo=None, limite=None, limite_sessao=None):
 def _decidir(limits, agora=None, arquivo=None, limite=None, limite_sessao=None):
     """Motor deste turno ('claude' ou 'agy') pelo uso do Claude em `limits` (runtime.LIMITS); grava a espera no arquivo."""
     agora = time.time() if agora is None else agora
+    lim_arq = limites_arquivo(arquivo)
     arquivo = arquivo or ARQUIVO
+    limits = dict(limits or {})
+    if not any(isinstance(limits.get(j), dict) for j in JANELAS):
+        carrega_limites(limits, lim_arq)   # processo novo (agentes.py, servidor reiniciado): ultimo uso gravado
     usos = {}
-    for janela in ("seven_day", "five_hour"):
+    for janela in JANELAS:
         w = (limits or {}).get(janela) or {}
         uso, reset = w.get("used"), w.get("resets")
         r = _num(reset)
@@ -140,11 +182,67 @@ def _decidir(limits, agora=None, arquivo=None, limite=None, limite_sessao=None):
     except Exception:  # noqa: BLE001
         agy_ok = False
     antes = _le(arquivo)
+    bloq = agy_bloqueado(antes, agora)
+    agy_ok = agy_ok and bloq is None   # agy sem cota (comando "o agy esta sem cota"): a regra fica no Claude ate o prazo
     motor, depois, motivo = escolher(usos, agora, antes, agy_ok, limite, limite_sessao)
+    if bloq is not None and motor == "claude":
+        motivo = f"agy sem cota ate {_quando(bloq)}: fica no Claude"
+    for campo in ("forcar", "agy_bloqueado_ate"):
+        if antes.get(campo) is not None:
+            depois = dict(depois, **{campo: antes[campo]})   # a espera nunca apaga o motor fixo nem o bloqueio gravados
     if depois != antes and (depois.get("motor") == "agy" or antes):
         _grava(arquivo, depois)
     ULTIMO.update(motor=motor, motivo=motivo)
     return motor
+
+
+def agy_bloqueado(estado, agora):
+    """Fim do bloqueio do agy (campo "agy_bloqueado_ate", limitado a agora + 8 dias) ou None se nao ha bloqueio vigente."""
+    b = (estado if isinstance(estado, dict) else {}).get("agy_bloqueado_ate")
+    if isinstance(b, bool) or not isinstance(b, (int, float)) or b != b or not agora < b:
+        return None
+    return min(b, agora + ESPERA_MAX)
+
+
+def bloquear_agy(ate=None, agora=None, arquivo=None):
+    """Marca o agy sem cota ate `ate` (epoch s; None ou invalido = agora + BLOQUEIO_PADRAO; teto agora + 8 dias).
+    Enquanto valer, a regra nunca devolve agy. Atomico e sob a mesma trava do decidir(). Devolve o instante gravado."""
+    agora = time.time() if agora is None else agora
+    fim = _reset_valido(ate)
+    fim = agora + BLOQUEIO_PADRAO if fim is None or fim <= agora else min(fim, agora + ESPERA_MAX)
+    arquivo = arquivo or ARQUIVO
+    with _TRAVA:
+        e = _le(arquivo)
+        e["agy_bloqueado_ate"] = fim
+        e.setdefault("motor", "claude")
+        e.setdefault("ate", None)
+        _grava(arquivo, e)
+    return fim
+
+
+def forcado(padrao=None, arquivo=None):
+    """Motor fixo: 'claude', 'agy' ou '' (automatico). Precedencia: campo "forcar" do motor.json (comando por voz/chat)
+    > `padrao` (FEDORA_MOTOR do ambiente, o padrao de boot) > '' (regra). FEDORA_MOTOR invalido cai no Claude."""
+    f = _le(arquivo or ARQUIVO).get("forcar")
+    if f in ("claude", "agy"):
+        return f
+    p = (os.environ.get("FEDORA_MOTOR", "auto") if padrao is None else padrao).strip().lower() or "auto"
+    return "" if p == "auto" else p if p in ("claude", "agy") else "claude"
+
+
+def definir_forcado(valor, arquivo=None):
+    """Grava o motor fixo no motor.json (claude | agy; auto limpa). Atomico e sob a mesma trava do decidir()."""
+    valor = (valor or "").strip().lower()
+    if valor not in ("claude", "agy", "auto"):
+        raise ValueError(valor)
+    arquivo = arquivo or ARQUIVO
+    with _TRAVA:
+        e = _le(arquivo)
+        e["forcar"] = None if valor == "auto" else valor
+        e.setdefault("motor", "claude")
+        e.setdefault("ate", None)
+        _grava(arquivo, e)
+    return valor
 
 
 def _teste():
@@ -259,6 +357,78 @@ def _teste():
         assert decidir({}, ag + ESPERA_MAX + 1, arq) == "claude"
         assert decidir({"seven_day": {"used": 0.70, "resets": 1.8e12}}, ag, arq) == "agy"
         assert json.loads(arq.read_text(encoding="utf-8"))["ate"] == ag + ESPERA_SEM_RESET
+
+        # limites.json compartilhado: processo novo com LIMITS vazio usa o ultimo uso gravado; janela resetada e descartada
+        la = arq.parent / "la" / "motor.json"
+        lj = limites_arquivo(la)
+        assert lj == la.parent / "limites.json"
+        grava_limites({}, lj)
+        assert not lj.exists()                                                               # nada a gravar: nao cria
+        grava_limites({"seven_day": {"used": 0.60, "resets": sem}, "last": {"total": 1}}, lj, agora=ag)
+        assert json.loads(lj.read_text(encoding="utf-8")) == {"em": ag, "janelas": {"seven_day": {"used": 0.60, "resets": sem}}}
+        d = {}
+        assert carrega_limites(d, lj) == ag and d == {"seven_day": {"used": 0.60, "resets": sem}}
+        assert decidir({}, ag, la) == "agy" and json.loads(la.read_text(encoding="utf-8"))["ate"] == sem
+        la.unlink()
+        assert decidir({}, sem + 1, la) == "claude"                                          # semana resetou: dado velho descartado
+        assert decidir({"seven_day": {"used": 0.10, "resets": sem}}, ag, la) == "claude"     # dado em memoria vence o arquivo
+        lj.write_text('{"em": true, "janelas": [1]}', encoding="utf-8")
+        assert carrega_limites({}, lj) == 0 and decidir({}, ag, la) == "claude"              # arquivo lixo: ignorado
+
+        # motor fixo: "forcar" do arquivo > FEDORA_MOTOR (padrao) > regra; auto limpa; arquivo antigo = automatico
+        fx = arq.parent / "forcar.json"
+        fx.write_text(json.dumps({"motor": "agy", "ate": ag + h}), encoding="utf-8")   # formato antigo, sem "forcar"
+        assert forcado("auto", fx) == "" and forcado("agy", fx) == "agy" and forcado("claude", fx) == "claude"
+        for ruim in ("gpt", "xyz"):
+            assert forcado(ruim, fx) == "claude", ruim                                    # invalido: Claude
+        assert definir_forcado(" AGY ", fx) == "agy" and forcado("claude", fx) == "agy" and forcado("auto", fx) == "agy"
+        assert json.loads(fx.read_text(encoding="utf-8")) == {"motor": "agy", "ate": ag + h, "forcar": "agy"}   # espera mantida
+        assert decidir({}, ag, fx) == "agy" and json.loads(fx.read_text(encoding="utf-8"))["forcar"] == "agy"
+        assert decidir({}, ag + 2 * h, fx) == "claude" and json.loads(fx.read_text(encoding="utf-8"))["forcar"] == "agy"   # espera venceu, fixo fica
+        assert definir_forcado("claude", fx) == "claude" and forcado("agy", fx) == "claude"
+        assert definir_forcado("auto", fx) == "auto" and forcado("auto", fx) == "" and forcado("agy", fx) == "agy"
+        assert json.loads(fx.read_text(encoding="utf-8"))["forcar"] is None
+        nv = arq.parent / "novo.json"
+        assert definir_forcado("agy", nv) and json.loads(nv.read_text(encoding="utf-8")) == {"forcar": "agy", "motor": "claude", "ate": None}
+        assert decidir({}, ag, nv) == "claude"   # o fixo nao entra na regra: quem aplica a precedencia e o runtime
+        for ruim in ("gpt", "", None):
+            try:
+                definir_forcado(ruim, fx)
+                raise AssertionError(ruim)
+            except ValueError:
+                pass
+        fx.write_text(json.dumps({"forcar": "gpt"}), encoding="utf-8")
+        assert forcado("auto", fx) == ""                                                   # "forcar" lixo no arquivo: ignorado
+
+        # agy sem cota: com o bloqueio no futuro a regra nunca devolve agy; vencido, volta ao normal
+        alto = {"seven_day": {"used": 0.70, "resets": sem}, "five_hour": {"used": 0.95, "resets": ses}}
+        bq = arq.parent / "bloq.json"
+        assert bloquear_agy(ag + h, ag, bq) == ag + h
+        assert json.loads(bq.read_text(encoding="utf-8")) == {"agy_bloqueado_ate": ag + h, "motor": "claude", "ate": None}
+        assert decidir(alto, ag, bq) == "claude" and "sem cota" in ULTIMO["motivo"]
+        assert decidir(alto, ag + h - 1, bq) == "claude" and json.loads(bq.read_text(encoding="utf-8"))["agy_bloqueado_ate"] == ag + h
+        assert decidir(alto, ag + h, bq) == "agy" and json.loads(bq.read_text(encoding="utf-8"))["agy_bloqueado_ate"] == ag + h
+        # bloquear no meio de uma espera no agy: volta ao Claude ja no proximo turno
+        assert bloquear_agy(None, ag + h, bq) == ag + h + BLOQUEIO_PADRAO and decidir({}, ag + h + 1, bq) == "claude"
+        # reset invalido, passado ou em ms vira o padrao curto; absurdo fica no teto de 8 dias
+        for ruim in (None, "lixo", ag - 1, 1.8e12, float("nan")):
+            assert bloquear_agy(ruim, ag, bq) == ag + BLOQUEIO_PADRAO, ruim
+        assert bloquear_agy(9e10, ag, bq) == ag + ESPERA_MAX
+        for lixo in (True, "1e20", None, float("nan"), ag - 1):
+            assert agy_bloqueado({"agy_bloqueado_ate": lixo}, ag) is None, lixo
+        assert agy_bloqueado({"agy_bloqueado_ate": float("inf")}, ag) == ag + ESPERA_MAX
+        # precedencia intacta: o fixo gravado sobrevive ao bloqueio e vice-versa (quem aplica "forcar" e o runtime)
+        definir_forcado("agy", bq)
+        assert forcado("claude", bq) == "agy" and json.loads(bq.read_text(encoding="utf-8"))["agy_bloqueado_ate"] == ag + ESPERA_MAX
+        assert decidir(alto, ag, bq) == "claude" and json.loads(bq.read_text(encoding="utf-8"))["forcar"] == "agy"
+
+        # comando local de voz/chat
+        import commands
+        for frase in ("o agy está sem cota", "Fedora, o agy ta sem cota", "agy sem cota", "o gemini acabou a cota"):
+            assert commands.motor_local(frase) == ("agy", "sem_cota"), (frase, commands.motor_local(frase))
+        for frase in ("o claude esta sem cota", "o agy esta sem cota pra revisar isso", "sem cota"):
+            assert commands.motor_local(frase) != ("agy", "sem_cota"), frase
+        assert commands.motor_local("troca o motor pro agy") == ("agy", "troca")   # comando antigo intacto
     finally:
         motor_agy.instalado = real
     print("motor_regra ok")

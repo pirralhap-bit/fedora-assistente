@@ -22,6 +22,7 @@ import time
 import uuid
 
 MODEL = os.environ.get("JARVIS_MODEL", "").strip()
+MODEL_LEVE = os.environ.get("FEDORA_MODEL_LEVE", "").strip()   # so o turno leve (full is False); vazio = MODEL
 WORKDIR = os.path.expanduser(os.environ.get("JARVIS_WORKDIR", os.getcwd()))
 # bypassPermissions by default: a headless `claude -p` can't surface a permission
 # prompt, so any gated tool (MCP connectors, web search) would silently fail
@@ -98,13 +99,13 @@ DENY = list(dict.fromkeys(
 # without it the MCP tools (Gmail, Drive, Chrome) load in full instead of deferred (17k measured).
 LIGHT = ["--disable-slash-commands",
          "--tools", "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,ToolSearch"]
-# Team mode needs no extra tool: the agents (agentes/, independent of the engine) are called through the shell with
-# `agentes.py <agente> "<tarefa>"`, so the same call works from the Claude engine and from the agy engine.
-LIGHT_EQUIPE = LIGHT
+# O modo equipe usa as mesmas ferramentas do leve (LIGHT): os agentes (agentes/, independentes do motor) sao chamados
+# pelo shell com `agentes.py <agente> "<tarefa>"`, entao a mesma chamada serve no motor Claude e no agy.
 LIMITS = {}   # last seen plan usage: {"five_hour": {"used": .29, "resets": epoch}, ...}
-RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude|mock
+RUNTIME = os.environ.get("JARVIS_RUNTIME", "auto").strip().lower()   # auto|claude ("mock" foi removido: vira erro)
 # Qual assinatura responde: auto (padrao: Claude, e o agy quando o Claude passa de 55% na semana ou chega a 90% na sessao
-# de 5 h, ate aquela janela resetar; ver motor_regra.py), ou claude / agy para forcar um.
+# de 5 h, ate aquela janela resetar; ver motor_regra.py), ou claude / agy para forcar um. E so o padrao de boot: o
+# "forcar" do motor.json (comando por voz/chat) vence; quem decide e motor_atual().
 # agy = Antigravity/Google (motor_agy.py, mesma autonomia, mesmas travas DENY).
 MOTOR = os.environ.get("FEDORA_MOTOR", "auto").strip().lower()
 IDLE_TIMEOUT = int(os.environ.get("JARVIS_TIMEOUT", "180"))
@@ -116,6 +117,26 @@ AGENTE_TIMEOUT = int(os.environ.get("FEDORA_AGENTE_TIMEOUT", "300"))
 def limite_ocioso(ferramenta_pendente):
     """Seconds of silence allowed: IDLE_TIMEOUT, or the hard ceiling while a tool is still running."""
     return max(IDLE_TIMEOUT, AGENTE_TIMEOUT + 60) if ferramenta_pendente else IDLE_TIMEOUT
+
+
+# Teto de passos (--max-turns) so no modo leve; 0 desliga. A flag existe na CLI, mas nao aparece no --help.
+MAX_PASSOS = int(os.environ.get("FEDORA_MAX_PASSOS", "14") or 0)
+AVISO_PASSOS = "Parei no limite de {n} passos; peça de novo se quiser que eu continue."
+# Falha transitoria (timeout ocioso, Esc, rede, cota, sobrecarga): a sessao continua valida e nao deve ser zerada
+_TRANSITORIO_RE = re.compile(
+    r"timeout|timed out|went quiet|\brede\b|network|connection|conex|econnreset|1005[34]|10060|quota|cota|limit|"
+    r"\b429\b|\b503\b|\b529\b|overloaded|cancel|interrompido", re.I)
+
+
+def erro_invalida_sessao(msg):
+    """True se o erro deve zerar a sessao (o padrao, inclusive para erro desconhecido); False se for transitorio."""
+    return not _TRANSITORIO_RE.search(str(msg or ""))
+
+
+def limite_de_passos(ev):
+    """True se o evento result do CLI e a parada pelo teto de --max-turns (nao e erro)."""
+    return ev.get("subtype") == "error_max_turns" or (
+        bool(ev.get("is_error")) and bool(re.search(r"max(imum)?[ _-]?turns", str(ev.get("result") or ""), re.I)))
 RAW_LOG = os.environ.get("JARVIS_RAW_LOG", "").strip()
 
 # One Claude subprocess at a time: session state is shared, and the browser
@@ -208,20 +229,52 @@ def _claude_base():
     return ["claude"]
 
 
+LAUNCH_TTL = 300   # s: o `claude --version` so roda de novo depois disso (ou se o executavel sumir)
+LAUNCH_TTL_FALHA = 45   # s: falha fica pouco tempo (sem Claude instalado, /api/status nao abre processo a cada consulta)
+_LAUNCH = {"em": 0.0, "res": None}
+_LAUNCH_LOCK = threading.Lock()
+_LAUNCH_RODANDO = threading.Lock()   # so um `claude --version` por vez; quem chega junto reaproveita o resultado
+
+
+def invalida_launch():
+    with _LAUNCH_LOCK:
+        _LAUNCH["res"] = None
+
+
+def _launch_cache():
+    with _LAUNCH_LOCK:
+        res = _LAUNCH["res"]
+        if res is not None and time.monotonic() - _LAUNCH["em"] < (LAUNCH_TTL if res[0] else LAUNCH_TTL_FALHA):
+            return res
+    return None
+
+
 def _can_launch():
-    try:
-        p = subprocess.run(_claude_base() + ["--version"], cwd=WORKDIR, text=True, encoding="utf-8", errors="replace",
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
-        return p.returncode == 0, (p.stdout or p.stderr).strip()
-    except Exception as e:  # noqa: BLE001
-        return False, str(e)
+    res = _launch_cache()
+    if res is not None:
+        return res
+    with _LAUNCH_RODANDO:
+        res = _launch_cache()   # outro thread pode ter conferido enquanto este esperava
+        if res is not None:
+            return res
+        try:
+            p = subprocess.run(_claude_base() + ["--version"], cwd=WORKDIR, text=True, encoding="utf-8", errors="replace",
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+            res = (p.returncode == 0, (p.stdout or p.stderr).strip())
+        except Exception as e:  # noqa: BLE001
+            res = (False, str(e))
+        with _LAUNCH_LOCK:
+            _LAUNCH["res"], _LAUNCH["em"] = res, time.monotonic()
+    return res
 
 
 def runtime_kind():
-    if RUNTIME in ("mock", "claude"):
+    if RUNTIME == "claude":
         return RUNTIME
+    if RUNTIME == "mock":   # motor de teste removido: o status bate com o erro de run()
+        return "removido"
     ok, _ = _can_launch()
-    return "claude" if ok else "mock"
+    return "claude" if ok else "indisponivel"
 
 
 def version():
@@ -243,13 +296,16 @@ def build_command(message, session_id=None, system=None, full=True, via_stdin=Fa
         "--settings", json.dumps({"enabledPlugins": {"ponytail@ponytail": False}}),
     ]
     if full == "equipe":
-        cmd += LIGHT_EQUIPE
+        cmd += LIGHT
     elif not full:
         cmd += LIGHT
+        if MAX_PASSOS > 0:   # so o leve tem teto; completo e equipe seguem sem
+            cmd += ["--max-turns", str(MAX_PASSOS)]
     if valid_session(session_id):
         cmd += ["--resume", str(session_id)]
-    if MODEL:
-        cmd += ["--model", MODEL]
+    modelo = (MODEL_LEVE or MODEL) if full is False else MODEL
+    if modelo:
+        cmd += ["--model", modelo]
     if PERMISSION:
         cmd += ["--permission-mode", PERMISSION]
     cmd += ["--disallowedTools", *DENY]
@@ -345,13 +401,15 @@ def _run_locked(message, session_id=None, system=None, full=True):
         return
     try:
         env["PYTHONUTF8"] = "1"
-        env["FEDORA_MOTOR_TURNO"] = "claude"   # agents that exist on both subscriptions follow the engine of this turn
+        # FEDORA_MOTOR_TURNO = so a decisao DESTE turno passada aos filhos (agentes.py); quem decide e motor_atual()
+        env["FEDORA_MOTOR_TURNO"] = "claude"
         proc = subprocess.Popen(cmd, cwd=WORKDIR, text=True, encoding="utf-8", errors="replace", bufsize=1,
                                 stdin=subprocess.PIPE if via_stdin else subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         with _ACTIVE_LOCK:
             _ACTIVE_PROC = proc
     except FileNotFoundError:
+        invalida_launch()   # o executavel sumiu: o proximo turno confere de novo
         raise RuntimeError("claude CLI not found. Install Claude Code or set CLAUDE_CMD.")
 
     q = collections.deque()
@@ -451,6 +509,8 @@ def _run_locked(message, session_id=None, system=None, full=True):
                 # official plan usage (0..1) per window; the HUD reads it from /api/system
                 for name, w in (info.get("unifiedWindows") or {}).items():
                     LIMITS[name] = dict(used=w.get("utilization"), resets=w.get("resetsAt"))
+                import motor_regra
+                motor_regra.grava_limites(LIMITS)   # limites.json: agentes.py e servidor reiniciado partem deste dado
                 yield dict(t="ratelimit", status=info.get("status"),
                            window=info.get("rateLimitType"), resets=info.get("resetsAt"))
                 continue
@@ -501,7 +561,11 @@ def _run_locked(message, session_id=None, system=None, full=True):
 
             if kind == "result":
                 usage = ev.get("usage") or last_usage or {}
-                if ev.get("subtype") != "success" and not text_seen:
+                if limite_de_passos(ev):   # teto de passos: entrega o parcial com um aviso, sem erro
+                    aviso = AVISO_PASSOS.format(n=MAX_PASSOS)
+                    yield dict(t="delta", text=("\n\n" if text_seen else "") + aviso)
+                    text_seen = True
+                elif ev.get("subtype") != "success" and not text_seen:
                     yield dict(t="error", message=str(ev.get("result") or "Claude returned an error")[:400])
                     return
                 if not text_seen and ev.get("result"):
@@ -554,41 +618,194 @@ def _run_locked(message, session_id=None, system=None, full=True):
                 _ACTIVE_PROC = None
 
 
-def run_mock(message, session_id=None, system=None):
-    ok, detail = _can_launch()
-    yield dict(t="error", message=("Claude Code is not reachable from this process. "
-                                   "Install it, or set CLAUDE_CMD to the executable. "
-                                   f"Diagnostic: {detail[:200]}"))
+def motor_forcado():
+    """Motor fixo ('claude' | 'agy') ou '' se automatico: motor.json ("forcar") > FEDORA_MOTOR (MOTOR) > regra."""
+    import motor_regra
+    return motor_regra.forcado(MOTOR)
 
 
 def motor_atual(motor=None):
-    """Motor deste turno: 'claude' ou 'agy'. 'auto' aplica a regra de uso do Claude (semana > 55% ou sessao de 5 h >= 90%,
-    motor_regra); qualquer outro valor cai no Claude (nunca num motor desconhecido)."""
-    motor = (motor or MOTOR or "claude").strip().lower()
+    """UNICA funcao que decide o motor: 'claude' ou 'agy'. Sem argumento: motor fixo (motor_forcado) ou, se nao houver,
+    a regra de uso do Claude (semana > 55% ou sessao de 5 h >= 90%, motor_regra). Com argumento explicito: 'auto' aplica
+    so a regra; qualquer outro valor cai no Claude (nunca num motor desconhecido)."""
+    import motor_regra
+    if not (motor or "").strip():
+        motor = motor_forcado() or "auto"
+    motor = motor.strip().lower()
     if motor == "auto":
-        import motor_regra
         return motor_regra.decidir(LIMITS)
+    if motor == "agy" and motor_regra.agy_bloqueado(motor_regra._le(motor_regra.ARQUIVO), time.time()) is not None:
+        return "claude"   # agy sem cota nunca recebe o turno, nem com o motor fixo (decisao do usuario 12/11)
     return motor if motor in ("claude", "agy") else "claude"
+
+
+def definir_motor(valor):
+    """Troca o motor (comando local por voz/chat, sem passar pelo modelo): claude | agy | auto. Grava no motor.json
+    (motor_regra.definir_forcado): vale para todo processo (agentes.py, despachante) e sobrevive a reinicio; "auto" limpa.
+    MOTOR/os.environ acompanham por compatibilidade. Devolve o valor aplicado; levanta ValueError se for outro."""
+    global MOTOR
+    valor = (valor or "").strip().lower()
+    if valor not in ("claude", "agy", "auto"):
+        raise ValueError(valor)
+    import motor_regra
+    motor_regra.definir_forcado(valor)
+    MOTOR = valor
+    os.environ["FEDORA_MOTOR"] = valor
+    return valor
 
 
 def run(message, session_id=None, system=None, full=True, motor=None):
     if motor_atual(motor) == "agy":
+        refaz, gen = False, None
         try:
             import motor_agy
-            yield from motor_agy.run(message, session_id, system, full)
+            agiu = False   # texto ou ferramenta: o agy ja fez algo visivel, refazer duplicaria a acao
+            retido = []   # status do agy segurado ate ele agir: no refazer some e a UI so ve o do Claude
+            gen = motor_agy.run(message, session_id, system, full)
+            for ev in gen:
+                if ev.get("t") in ("delta", "tool"):
+                    agiu = True
+                elif ev.get("t") == "error" and ev.get("cota") and not agiu:
+                    refaz = True   # agy sem cota antes de agir: motor_agy ja bloqueou; o turno vai ao Claude
+                    break
+                if ev.get("t") == "status" and not agiu:
+                    retido.append(ev)
+                    continue
+                yield from retido
+                retido = []
+                yield ev
+            if not refaz:
+                yield from retido
         except Exception as e:  # noqa: BLE001
             yield dict(t="error", message=f"could not start agy core: {e}")
+        finally:
+            if gen is not None:
+                gen.close()   # mata o processo agy e solta o EXECUTION_LOCK antes de o Claude subir
+        if not refaz:
+            return
+        if session_id:   # a sessao era do agy: o Claude abre outra e recebe o historico recente
+            import conversa
+            hist = conversa.recente()
+            message = f"{hist}\n\n{message}" if hist else message
+        for ev in run(message, None, system, full, motor="claude"):
+            if ev.get("t") == "complete":
+                ev["motor"] = "claude"   # o servidor grava a sessao com o motor que de fato respondeu
+            yield ev
+        return
+    if RUNTIME == "mock":   # motor falso herdado do fork foi removido
+        yield dict(t="error", message="O motor de teste (JARVIS_RUNTIME=mock) foi removido; use auto ou claude.")
         return
     if runtime_kind() != "claude":
-        yield from run_mock(message, session_id, system)
+        _, detail = _can_launch()
+        yield dict(t="error", message=("Claude Code não está acessível deste processo. Instale ou aponte CLAUDE_CMD "
+                                       f"para o executável. Diagnóstico: {detail[:200]}"))
         return
     try:
         yield from run_claude(message, session_id, system, full)
     except Exception as e:  # noqa: BLE001
+        if isinstance(e, FileNotFoundError):   # o executavel sumiu: o proximo turno confere de novo
+            invalida_launch()
         yield dict(t="error", message=f"could not start Claude core: {e}")
 
 
 if __name__ == "__main__":
+    # agy sem cota antes do 1o delta: o turno e refeito no Claude (sem sessao do agy); outro erro ou cota apos delta nao troca
+    import motor_agy as _ma
+    _ra, _rl, _cx, _rc, _rk, _rt = _ma.run, _ma._run_locked, _ma.com_contexto, run_claude, runtime_kind, RUNTIME
+    _fechado = []
+    def _lock_livre():   # RLock: so outra thread enxerga se o agy ainda segura o lock
+        _r = []
+        def _tenta():
+            _ok = EXECUTION_LOCK.acquire(blocking=False)
+            _r.append(_ok)
+            if _ok:
+                EXECUTION_LOCK.release()
+        _t = threading.Thread(target=_tenta)
+        _t.start()
+        _t.join()
+        return _r[0]
+    _msgs = []
+    def _claude_falso(m, s, sy, f):
+        assert _lock_livre(), "agy ainda segura o lock"
+        _msgs.append(m)
+        yield dict(t="delta", text=f"claude:{s}")
+        yield dict(t="complete", session_id=None)
+    try:
+        run_claude, runtime_kind, RUNTIME = _claude_falso, (lambda: "claude"), "auto"
+        _ma.com_contexto = lambda sy, s: sy
+        import motor_regra as _mr, conversa as _cv
+        _ab, _rec = _mr.agy_bloqueado, _cv.recente
+        _cv.recente = lambda: "## Conversa recente\nH"
+        _mr.agy_bloqueado = lambda e, a: 1.0   # bloqueio vigente: nem o motor fixo em agy recebe o turno
+        assert motor_atual("agy") == "claude"
+        _mr.agy_bloqueado = lambda e, a: None
+        assert motor_atual("agy") == "agy"
+        for _evs, _esperado in (
+                ([dict(t="status"), dict(t="error", message="quota", cota=True)], ["claude:None", "complete"]),
+                ([dict(t="status"), dict(t="error", message="agy exited with code 1")], ["status", "error"]),
+                ([dict(t="error", message="agy exited with code 1")], ["error"]),
+                ([dict(t="tool", phase="use"), dict(t="error", message="quota", cota=True)], ["tool", "error"]),
+                ([dict(t="delta", text="oi"), dict(t="error", message="quota", cota=True)], ["oi", "error"])):
+            def _falso(m, s, sy, f, _e=_evs):   # _run_locked falso: passa pelo motor_agy.run real (lock + close)
+                try:
+                    yield from _e
+                    yield dict(t="error", message="nao deveria chegar aqui")
+                finally:
+                    _fechado.append(1)
+            _ma._run_locked = _falso
+            _evs_saida = list(run("x", "sessao-agy", motor="agy"))
+            _saida = [e.get("text") or e["t"] for e in _evs_saida][:len(_esperado)]
+            assert _saida == _esperado, (_saida, _esperado)
+            if "complete" in _saida:
+                assert _evs_saida[-1].get("motor") == "claude", _evs_saida
+        assert len(_fechado) == 5 and _lock_livre()
+        assert _msgs == ["## Conversa recente\nH\n\nx"], _msgs   # refazer leva o historico da sessao do agy
+    finally:
+        _mr.agy_bloqueado, _cv.recente = _ab, _rec
+        _ma.run, _ma._run_locked, _ma.com_contexto, run_claude, runtime_kind, RUNTIME = _ra, _rl, _cx, _rc, _rk, _rt
+    # cache do `claude --version`: dois turnos = um processo; falha nao fica em cache; FileNotFoundError invalida
+    _sr, _chamadas = subprocess.run, []
+    def _falso(cmd, **k):
+        _chamadas.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="2.0.0 (Claude Code)", stderr="")
+    try:
+        subprocess.run = _falso
+        invalida_launch()
+        assert _can_launch() == (True, "2.0.0 (Claude Code)") and _can_launch()[0] and version() == "2.0.0 (Claude Code)"
+        assert len(_chamadas) == 1, _chamadas
+        invalida_launch(); _can_launch()
+        assert len(_chamadas) == 2, _chamadas
+        _LAUNCH["em"] -= LAUNCH_TTL + 1; _can_launch()   # passou o TTL: confere de novo
+        assert len(_chamadas) == 3, _chamadas
+        subprocess.run = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("claude"))
+        invalida_launch()
+        assert _can_launch()[0] is False and _LAUNCH["res"][0] is False   # falha fica em cache curto
+        subprocess.run = _falso; _n = len(_chamadas)
+        assert _can_launch()[0] is False and len(_chamadas) == _n   # dentro dos 45 s: sem processo novo
+        _LAUNCH["em"] -= LAUNCH_TTL_FALHA + 1
+        assert _can_launch()[0] is True and len(_chamadas) == _n + 1   # passou o TTL curto: confere de novo
+        # FileNotFoundError no Popen real do run_claude invalida o cache
+        _po0, _rt0 = subprocess.Popen, RUNTIME
+        subprocess.Popen = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("claude"))
+        RUNTIME = "claude"
+        try:
+            ev = list(run("oi", motor="claude"))
+        finally:
+            subprocess.Popen, RUNTIME = _po0, _rt0
+        assert ev[-1]["t"] == "error" and _LAUNCH["res"] is None, ev
+        # chamadas simultaneas com cache vazio: um processo so
+        _n = len(_chamadas); invalida_launch()
+        def _lento(cmd, **k):
+            time.sleep(0.2)
+            return _falso(cmd, **k)
+        subprocess.run = _lento
+        _ts = [threading.Thread(target=_can_launch) for _ in range(4)]
+        for _t in _ts: _t.start()
+        for _t in _ts: _t.join()
+        assert len(_chamadas) == _n + 1, _chamadas
+    finally:
+        subprocess.run = _sr
+        invalida_launch()
     e = tool_event(dict(id="t1", name="Task", input=dict(subagent_type="junior", description="ajustar README", prompt="x")))
     assert e["agent"] == "junior" and e["desc"] == "ajustar README" and e["id"] == "t1" and e["parent"] is None, e
     e = tool_event(dict(id="t2", name="Read", input=dict(file_path="a.py")), parent="t1")
@@ -613,6 +830,46 @@ if __name__ == "__main__":
                           ("Python.EXE agentes.py qa", ("qa", "")), ("  python agentes.py qa  x\n", ("qa", "x"))):
         assert delegacao_em(sim) == esperado, (sim, delegacao_em(sim))
     assert motor_atual("agy") == "agy" and motor_atual(" AGY ") == "agy" and motor_atual("claude") == "claude"
+    _r0 = RUNTIME
+    RUNTIME = "mock"   # motor de teste removido: um só evento de erro, em português
+    try:
+        _ev = list(run("x", motor="claude"))
+        assert len(_ev) == 1 and _ev[0]["t"] == "error" and "removido" in _ev[0]["message"], _ev
+        assert runtime_kind() == "removido"
+    finally:
+        RUNTIME = _r0
+    import json as _json
+    import pathlib
+    import tempfile
+    import motor_regra
+    _m0, _e0, _a0 = MOTOR, os.environ.get("FEDORA_MOTOR"), motor_regra.ARQUIVO
+    motor_regra.ARQUIVO = pathlib.Path(tempfile.mkdtemp()) / "motor.json"   # nunca mexe no motor.json real
+    try:
+        assert definir_motor(" AGY ") == "agy" and MOTOR == "agy" and os.environ["FEDORA_MOTOR"] == "agy" and motor_atual() == "agy"
+        assert _json.loads(motor_regra.ARQUIVO.read_text(encoding="utf-8"))["forcar"] == "agy"   # gravado: outros processos veem
+        MOTOR = "claude"
+        assert motor_forcado() == "agy" == motor_atual()           # "forcar" do arquivo vence FEDORA_MOTOR
+        assert definir_motor("claude") == "claude" and motor_atual() == "claude" and definir_motor("auto") == "auto"
+        assert motor_forcado() == "" and _json.loads(motor_regra.ARQUIVO.read_text(encoding="utf-8"))["forcar"] is None
+        MOTOR = "agy"
+        assert motor_forcado() == "agy"                            # sem "forcar": FEDORA_MOTOR (padrao de boot)
+        MOTOR = "xyz"
+        assert motor_forcado() == "claude" == motor_atual()        # FEDORA_MOTOR invalido: Claude
+        MOTOR = "auto"
+        assert motor_forcado() == ""                               # automatico: decide a regra
+        for ruim in ("gpt", "", None):
+            try:
+                definir_motor(ruim)
+                raise AssertionError(ruim)
+            except ValueError:
+                assert MOTOR == "auto"   # valor invalido nao muda nada
+    finally:
+        motor_regra.ARQUIVO = _a0
+        MOTOR = _m0
+        if _e0 is None:
+            os.environ.pop("FEDORA_MOTOR", None)
+        else:
+            os.environ["FEDORA_MOTOR"] = _e0
     assert motor_atual("gpt") == "claude" and motor_atual("") == motor_atual(None)   # desconhecido cai no Claude, nunca num motor solto
     assert escalar_em("ESCALAR: mexe em DENY") and escalar_em([{"type": "text", "text": "Feito.\n  ESCALAR : precisa do senior"}])
     for falso in ("leia .claude/agents/junior.md (responda ESCALAR se não souber)", "grep ESCALAR docs/EQUIPE.md",
@@ -752,6 +1009,62 @@ if __name__ == "__main__":
         build_command = real_build
     AGENTE_TIMEOUT = 300
     IDLE_TIMEOUT = 180
+
+    # teto de passos: so o leve leva --max-turns; 0 desliga
+    _mp = MAX_PASSOS
+    try:
+        MAX_PASSOS = 14
+        leve = build_command("x", full=False)
+        assert leve[leve.index("--max-turns") + 1] == "14", leve
+        for outro in (True, "equipe"):
+            assert "--max-turns" not in build_command("x", full=outro), outro
+        MAX_PASSOS = 0
+        assert "--max-turns" not in build_command("x", full=False)
+    finally:
+        MAX_PASSOS = _mp
+    # modelo por modo: FEDORA_MODEL_LEVE so troca o turno leve; sem ela, nada muda
+    _m, _ml = MODEL, MODEL_LEVE
+    def _mod(c):
+        return c[c.index("--model") + 1] if "--model" in c else None
+    try:
+        MODEL, MODEL_LEVE = "opus", ""
+        for f in (False, True, "equipe"):
+            assert _mod(build_command("x", full=f)) == "opus", f
+        MODEL_LEVE = "sonnet"
+        assert _mod(build_command("x", full=False)) == "sonnet"
+        for f in (True, "equipe"):
+            assert _mod(build_command("x", full=f)) == "opus", f
+        MODEL = ""
+        assert _mod(build_command("x", full=True)) is None
+        assert _mod(build_command("x", full=False)) == "sonnet"
+    finally:
+        MODEL, MODEL_LEVE = _m, _ml
+    # parada pelo teto (saida simulada): complete com o parcial + aviso, sem erro
+    parcial = os.path.join(tmp, "fake_max.py")
+    trecho = {"type": "assistant", "message": {"content": [{"type": "text", "text": "Achei metade"}]}}
+    for corte in ({"type": "result", "subtype": "error_max_turns", "is_error": True, "num_turns": 15, "usage": {}},
+                  {"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "Reached max turns (14)"}):
+        with open(parcial, "w", encoding="utf-8") as fh:
+            fh.write(f"import json\nprint(json.dumps({trecho!r}), flush=True)\nprint(json.dumps({corte!r}), flush=True)\n")
+        try:
+            build_command = lambda *a, **k: [sys.executable, parcial]   # noqa: E731
+            out = list(run_claude("x"))
+        finally:
+            build_command = real_build
+        texto = "".join(e["text"] for e in out if e.get("t") == "delta")
+        assert out[-1]["t"] == "complete" and not any(e.get("t") == "error" for e in out), out
+        assert texto.startswith("Achei metade") and AVISO_PASSOS.format(n=MAX_PASSOS) in texto, texto
+    assert not limite_de_passos({"type": "result", "subtype": "success", "result": "fiz 14 turns"})
+
+    # erro transitorio nao zera a sessao; sessao invalida ou erro desconhecido zera (como antes)
+    for transitorio in (CANCELLED, "Claude went quiet for 180s and was stopped. ", "Request timed out", "API Error: Connection error.",
+                        "[WinError 10054] conexão fechada", "WinError 10060", "API Error: 429 rate_limit_error",
+                        "503 Service Unavailable", "API Error: 529 Overloaded", "Claude AI usage limit reached", "quota exceeded",
+                        "Request cancelled"):
+        assert not erro_invalida_sessao(transitorio), transitorio
+    for invalida in ("No conversation found with session ID: 1b4e28ba-2fa1-11d2-883f-0016d3cca427", "algo estranho aconteceu",
+                     "", None, "claude exited with code 1"):
+        assert erro_invalida_sessao(invalida), invalida
 
     gen = run_claude("x")
     assert next(gen)["t"] == "status"

@@ -95,10 +95,10 @@ def fatos(raiz=None, head=None):
         out.append(f"- Atenção: o mapa foi gerado no commit {gerado} e o projeto está em {atual}; confira nos arquivos antes de confiar.")
     elif gerado:
         out.append(f"- Atualizado: gerado no commit {gerado}.")
-    hubs = _secao(linhas, "Community Hubs", 20)
+    hubs = [h for h in _secao(linhas, "Community Hubs", 40) if h[2:].strip("` ").lower() not in ("time", "json")][:20]
     if hubs:
         out.append("Áreas principais: " + ", ".join(h[2:] for h in hubs) + ".")
-    deuses = _secao(linhas, "God Nodes", 8)
+    deuses = [d for d in _secao(linhas, "God Nodes", 30) if not d[2:].lstrip("` ").startswith("_teste")][:8]
     if deuses:
         out.append("Funções e classes mais ligadas (comece por elas):")
         out += deuses
@@ -154,6 +154,11 @@ def _teste():
     assert "Atualizado" in "\n".join(f) and "vad.py, runtime.py" in "\n".join(f) and "- `fold()` - 20 edges" in f, f
     assert "Surprising" not in "\n".join(f) and "x --references" not in "\n".join(f), f
     assert "Atenção" in "\n".join(fatos(pasta, head="913d54c")), "mapa velho tem que avisar"
+    (pasta / "graphify-out" / "GRAPH_REPORT.md").write_text(
+        "## Community Hubs (Navigation)\n- time\n- json\n- vad.py\n\n"
+        "## God Nodes (x)\n1. `_teste_corpo()` - 30 edges\n2. `_teste()` - 25 edges\n3. `fold()` - 20 edges\n", encoding="utf-8")
+    ft = "\n".join(fatos(pasta, head="x"))
+    assert "_teste" not in ft and "time" not in ft and "json" not in ft and "vad.py" in ft and "fold()" in ft, ft
     assert "ainda não gerado" in "\n".join(fatos(pasta / "nada", head="x"))
 
     arq = pasta / "ctx.md"

@@ -13,7 +13,8 @@ Limite conhecido, igual ao do Claude: DENY e freio contra frase mal ouvida, nao 
 
 Diferencas em relacao ao Claude, todas medidas em 2026-11-09 (agy 1.5.3):
 - sem `--append-system-prompt`: o bloco de sistema vai no inicio da mensagem (por stdin, sem o limite de 32k do Windows);
-- sem `--tools`/modo leve: o agy sempre carrega o conjunto dele (~11k tokens); no modo leve so desliga skills/slash;
+- sem `--tools`/modo leve: o agy sempre carrega o conjunto dele (~11k tokens); no modo leve so desliga skills/slash
+  e nao manda o resumo do projeto (com_contexto so quando full nao e False);
 - sem a ferramenta `Agent`: a equipe (agentes/, agentes.py) e chamada pelo shell, igual no Claude, entao "equipe" funciona nos dois;
 - sem janelas de cota (rate_limit_event): so contamos tokens por turno (STATS), para o HUD; a regra de troca de motor
   (motor_regra.py) olha so o uso do Claude.
@@ -199,8 +200,36 @@ def com_contexto(system, session_id=None):
     return f"{ctx}\n\n{system}" if ctx and system else (ctx or system)
 
 
+# Erro de cota do agy (ele nao informa janela de cota): casa -> motor_regra.bloquear_agy e o runtime refaz no Claude
+COTA_RE = re.compile(r"quota|resource[_ ]?exhausted|rate[_ ]?limit|\b429\b|usage limit|\bcota\b|out of credits", re.I)
+
+
+# stderr traz log solto (nomes de flag, "rate_limit" em config): so frases claras de cota estourada contam
+COTA_STDERR_RE = re.compile(r"resource[_ ]?exhausted|quota (?:exceeded|exhausted)|exceeded (?:your |the )?quota|"
+                            r"\b429\b.{0,40}too many requests|rate[_ ]?limit(?:ed| exceeded| reached)|"
+                            r"usage limit (?:reached|exceeded)|out of credits", re.I)
+
+
+def erro_cota(texto, estrito=False):
+    return bool(texto) and bool((COTA_STDERR_RE if estrito else COTA_RE).search(str(texto)))
+
+
+def _erro(message, estrito=False):
+    """Evento de erro; se for cota, bloqueia o agy (motor_regra) e marca cota=True para o runtime refazer no Claude."""
+    ev = dict(t="error", message=message[:500])
+    if erro_cota(message, estrito):
+        ev["cota"] = True
+        try:
+            import motor_regra
+            motor_regra.bloquear_agy()
+        except Exception:  # noqa: BLE001 - falha ao gravar o bloqueio nao derruba o turno
+            pass
+    return ev
+
+
 def run(message, session_id=None, system=None, full=True):
-    system = com_contexto(system, session_id)
+    if full is not False:  # turno leve ("que horas sao") nao paga o resumo do projeto; "a fundo", equipe e chat pagam
+        system = com_contexto(system, session_id)
     with runtime.EXECUTION_LOCK:
         yield from _run_locked(message, session_id, system, full)
 
@@ -336,7 +365,7 @@ def _run_locked(message, session_id, system, full):
                 resposta = str(r.get("response") or "")
                 if r.get("status") != "SUCCESS" and not texto_visto and not resposta:
                     motivo = r.get("error") or r.get("finished_reason") or r.get("status") or "erro"
-                    yield dict(t="error", message=f"agy: {motivo}"[:400])
+                    yield _erro(f"agy: {motivo}"[:400])
                     return
                 if not texto_visto and resposta:
                     yield dict(t="delta", text=resposta)
@@ -363,7 +392,7 @@ def _run_locked(message, session_id, system, full):
             yield dict(t="error", message=runtime.CANCELLED, cancelled=True)
             return
         if rc != 0:
-            yield dict(t="error", message=(" | ".join(list(errbuf)[-6:]) or f"agy exited with code {rc}")[:500])
+            yield _erro(" | ".join(list(errbuf)[-6:]) or f"agy exited with code {rc}", estrito=True)
             return
         if not texto_visto:
             yield dict(t="delta", text="O agy terminou sem texto.")
@@ -393,6 +422,26 @@ def _casa(regras, comando):
 
 
 def _teste():
+    # erro de cota: bloqueia o agy (sem gravar o motor.json real) e marca cota=True; outro erro nao bloqueia
+    import motor_regra
+    _bq, _chamou = motor_regra.bloquear_agy, []
+    motor_regra.bloquear_agy = lambda *a, **k: _chamou.append(1)
+    try:
+        for msg in ("agy: RESOURCE_EXHAUSTED", "Quota exceeded for model", "HTTP 429 Too Many Requests", "rate limit hit"):
+            ev = _erro(msg)
+            assert ev.get("cota") and ev["t"] == "error", msg
+        assert len(_chamou) == 4
+        for msg in ("agy negou a acao (x): regra deny", "agy exited with code 1", "timeout", "porta 14290 ocupada"):
+            assert "cota" not in _erro(msg), msg
+        assert len(_chamou) == 4
+        # stderr: so frase clara de cota; log solto com "quota"/"rate_limit" nao bloqueia
+        for msg in ("Error: RESOURCE_EXHAUSTED", "Quota exceeded for model x", "429 Too Many Requests", "rate limit exceeded"):
+            assert _erro(msg, estrito=True).get("cota"), msg
+        for msg in ("loading quota config", "flag --rate_limit=10", "port 14290 busy", "Error: boom"):
+            assert "cota" not in _erro(msg, estrito=True), msg
+        assert len(_chamou) == 8
+    finally:
+        motor_regra.bloquear_agy = _bq
     regras, n = regras_deny()
     cmds = [r for r in regras if r.startswith("command(")]
     assert n["comandos"] >= 50 and len(cmds) >= 50, n
@@ -447,6 +496,21 @@ def _teste():
         assert com_contexto("SIS", None) == "SIS"
     finally:
         del os.environ["FEDORA_CONTEXTO_AGY"]
+
+    # turno leve nao envia o contexto; completo (a fundo/equipe/chat) envia
+    global _run_locked
+    real_locked, vistos = _run_locked, []
+    def _falso(message, session_id, system, full):
+        vistos.append(system)
+        yield {"t": "done"}
+    _run_locked = _falso
+    try:
+        list(run("que horas sao", system="SIS", full=False))
+        list(run("a fundo", system="SIS", full=True))
+    finally:
+        _run_locked = real_locked
+    assert vistos[0] == "SIS", vistos[0][:80]
+    assert vistos[1].startswith("<contexto_do_projeto>") and vistos[1].endswith("\n\nSIS"), vistos[1][:80]
 
     # falha fechada: sem DENY nao inicia
     real = runtime.DENY

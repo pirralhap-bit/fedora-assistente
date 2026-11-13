@@ -112,21 +112,13 @@ def grava_sessoes(pasta, sessoes):
 # ---------------------------------------------------------------- uso do Claude (cache + sonda)
 
 def carrega_limites(arq=None):
-    """Poe em runtime.LIMITS o ultimo uso conhecido. Devolve quando foi observado (epoch) ou 0."""
-    d = _le_json(arq or LOCAL / "limites.json", {})
-    if not isinstance(d, dict):
-        return 0
-    for nome, _ in JANELAS:
-        w = (d.get("janelas") or {}).get(nome)
-        if isinstance(w, dict):
-            runtime.LIMITS[nome] = dict(used=w.get("used"), resets=w.get("resets"))
-    em = d.get("em")
-    return em if isinstance(em, (int, float)) and not isinstance(em, bool) else 0
+    """Poe em runtime.LIMITS o ultimo uso conhecido (limites.json do motor_regra, o mesmo do servidor e dos agentes).
+    Devolve quando foi observado (epoch) ou 0."""
+    return motor_regra.carrega_limites(runtime.LIMITS, arq)
 
 
 def grava_limites(arq=None):
-    janelas = {n: runtime.LIMITS[n] for n, _ in JANELAS if isinstance(runtime.LIMITS.get(n), dict)}
-    _grava_json(arq or LOCAL / "limites.json", {"em": time.time(), "janelas": janelas})
+    motor_regra.grava_limites(runtime.LIMITS, arq)
 
 
 def sondar():
